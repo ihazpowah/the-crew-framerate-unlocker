@@ -1,0 +1,16 @@
+# Generated build outputs, test fixtures and temporary build directories.
+/build/*
+!/build/build-scripts/
+
+# Compiler/linker intermediates can also be emitted beside the build scripts.
+*.obj
+*.lib
+*.exp
+*.pdb
+*.res
+*.ilk
+
+# Local editor state and Python caches.
+.vs/
+__pycache__/
+*.pyc
