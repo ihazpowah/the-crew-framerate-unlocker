@@ -45,7 +45,8 @@ static bool SafeCopyTo(uintptr_t address, const void* source, size_t size)
     }
 }
 
-static bool ReadPtr(uintptr_t address, uintptr_t* value)
+// Use SafeRead instead when a null pointer is a valid native field value.
+static bool ReadNonNullPointer(uintptr_t address, uintptr_t* value)
 {
     if (!SafeRead(address, value))
         return false;

@@ -46,14 +46,14 @@ static bool BuildArray(void* movieOwner, Value* array)
         return false;
     using CreateArrayFn = void(__fastcall*)(void*, Value*);
     using CreateObjectFn = void(__fastcall*)(void*, Value*, const char*, const Value*, unsigned);
-    reinterpret_cast<CreateArrayFn>(g_base + 0xfc8170)(reinterpret_cast<void*>(root), array);
+    reinterpret_cast<CreateArrayFn>(g_gameModuleBase + 0xfc8170)(reinterpret_cast<void*>(root), array);
     if ((array->type & 0x8f) != 9 || !array->interfacePtr)
         return false;
 
     for (size_t i = 0; i < g_options.size(); ++i)
     {
         Value object;
-        reinterpret_cast<CreateObjectFn>(g_base + 0xfc85a0)(
+        reinterpret_cast<CreateObjectFn>(g_gameModuleBase + 0xfc85a0)(
             reinterpret_cast<void*>(root), &object, nullptr, nullptr, 0);
         Value label;
         label.type = 6;

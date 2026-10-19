@@ -1,8 +1,11 @@
 #include <cassert>
-#include "../source/FramerateUnlocker/TheCrew.FramerateUnlocker.cpp"
-#include "LegacyVehicleAdmission.h"
+#include "FramerateUnlockerHarness.h"
+#include "reference/LegacyD3DLightFixtures.h"
+#include "reference/LegacyGpuSceneFixtures.h"
+#include "reference/SceneHistoryTestHelpers.h"
+#include "reference/LegacyVehicleAdmission.h"
 using namespace IntegratedController;
-#include "SunShadowTimelineTests.h"
+#include "native/presentation/SunShadowTimelineTests.h"
 
 static unsigned finalized = 0, built = 0;
 static uintptr_t nativeFrame = 0, nativeLight = 0;
@@ -18,7 +21,7 @@ static void __fastcall Finalize(uintptr_t camera)
     NativeCameraPose pose;
     memcpy(&pose, bytes, sizeof(pose));
     assert(NativeCameraPoseValid(pose) && !(camera & 15));
-    float world[16]; ShadowCameraWorld(pose, world);
+    float world[16]; CameraPoseToWorldMatrix(pose, world);
     float* view = reinterpret_cast<float*>(bytes + 0xa0);
     memset(view, 0, 64); view[15] = 1;
     for (int row = 0; row < 3; ++row)
@@ -33,7 +36,7 @@ static void __fastcall Build(uintptr_t owner, uintptr_t frame, uintptr_t view)
 {
     ++built; assert(view == 0x1234);
     uintptr_t camera = 0, origin = 0;
-    assert(ReadPtr(frame + 0x18, &camera) && ReadPtr(frame + 0x20, &origin));
+    assert(ReadNonNullPointer(frame + 0x18, &camera) && ReadNonNullPointer(frame + 0x20, &origin));
     ReadPose(camera, &capturedCamera);
     capturedCameraX = double(capturedCamera.high[0]) + capturedCamera.low[0];
     const float* eye = reinterpret_cast<const float*>(origin);
@@ -141,23 +144,23 @@ static void CheckGlobalTransformGate()
     matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1;
 
     // Restored global scene-transform scale gate: each basis row must stay
-    // within [0.85, 1.15]. VehicleLocalBasisLooksValid remains an independent
+    // within [0.85, 1.15]. AffineBasisLooksValid remains an independent
     // vehicle-local helper and is intentionally not forced to use this scale gate.
     for (float length : {0.001f, 0.499f, 0.5f, 0.849f, 1.151f, 2.0f, 2.001f, 100.0f})
     {
         matrix[0] = length;
-        assert(!TransformLooksValid(matrix));
-        assert(VehicleLocalBasisLooksValid(matrix));
+        assert(!RigidTransformLooksValid(matrix));
+        assert(AffineBasisLooksValid(matrix));
     }
     for (float length : {0.85f, 1.0f, 1.15f})
     {
         matrix[0] = length;
-        assert(TransformLooksValid(matrix));
-        assert(VehicleLocalBasisLooksValid(matrix));
+        assert(RigidTransformLooksValid(matrix));
+        assert(AffineBasisLooksValid(matrix));
     }
 
     matrix[0] = 0;
-    assert(!TransformLooksValid(matrix) && !VehicleLocalBasisLooksValid(matrix));
+    assert(!RigidTransformLooksValid(matrix) && !AffineBasisLooksValid(matrix));
 
     // Restored global shear gate uses RAW row dot products at +/-0.15.
     matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1;
@@ -166,7 +169,7 @@ static void CheckGlobalTransformGate()
     {
         matrix[4] = dot;
         matrix[5] = float(std::sqrt(1.0 - double(dot) * dot));
-        assert(TransformLooksValid(matrix) == (std::fabs(dot) <= 0.15f));
+        assert(RigidTransformLooksValid(matrix) == (std::fabs(dot) <= 0.15f));
     }
 
     // With authored scale, the test is still against the RAW dot. 1.1*0.136
@@ -174,21 +177,21 @@ static void CheckGlobalTransformGate()
     matrix[0] = 1.1f;
     matrix[4] = 0.136f;
     matrix[5] = float(std::sqrt(1.21 - 0.136 * 0.136));
-    assert(TransformLooksValid(matrix));
+    assert(RigidTransformLooksValid(matrix));
 
     matrix[4] = 0.137f;
     matrix[5] = float(std::sqrt(1.21 - 0.137 * 0.137));
-    assert(!TransformLooksValid(matrix));
+    assert(!RigidTransformLooksValid(matrix));
 
     // Replay the formerly admitted large nonuniform transform. Under the
-    // restored global scale filter it must now be rejected by TransformLooksValid,
+    // restored global scale filter it must now be rejected by RigidTransformLooksValid,
     // while the vehicle-local basis helper remains independent.
     const float scaled[16] = {-3.8644805f,-0.759299457f,-0.0155320428f,0,
         0.455340475f,-6.4442296f,-0.13049759f,0,
         -0.000120530698f,-0.170608908f,4.99827242f,0,
         33339,40910.13671875f,269.980438232f,1};
-    assert(!TransformLooksValid(scaled, true));
-    assert(VehicleLocalBasisLooksValid(scaled));
+    assert(!RigidTransformLooksValid(scaled, true));
+    assert(AffineBasisLooksValid(scaled));
 }
 static void CheckVehicleBasisSquaredAdmission()
 {
@@ -210,7 +213,7 @@ static void CheckVehicleBasisSquaredAdmission()
             if (!(length > 0) || !std::isfinite(length)) return false;
             for (unsigned col = 0; col < 3; ++col) rows[row*3+col] /= length;
         }
-        const double determinant = VehicleLocalShearDetail::Det3(rows);
+        const double determinant = AffineBasisDetail::Det3(rows);
         return std::isfinite(determinant) && std::fabs(determinant) >= 0.20;
     };
     const float scales[] = {std::numeric_limits<float>::denorm_min(),
@@ -222,11 +225,11 @@ static void CheckVehicleBasisSquaredAdmission()
             {
                 float matrix[16]{};
                 matrix[0] = x; matrix[5] = y; matrix[10] = z;
-                assert(VehicleLocalBasisLooksValid(matrix));
+                assert(AffineBasisLooksValid(matrix));
                 matrix[10] = -z; // Reflection is allowed.
-                assert(VehicleLocalBasisLooksValid(matrix));
+                assert(AffineBasisLooksValid(matrix));
                 matrix[5] = 0; matrix[4] = y; // Parallel rows are rejected.
-                assert(!VehicleLocalBasisLooksValid(matrix));
+                assert(!AffineBasisLooksValid(matrix));
             }
     for (float height : {0.19999f, std::nextafter(0.20f, 0.f), 0.20f,
         std::nextafter(0.20f, 1.f), 0.20001f})
@@ -235,9 +238,9 @@ static void CheckVehicleBasisSquaredAdmission()
             float matrix[16]{};
             matrix[0] = scale; matrix[4] = float(std::sqrt(1.0-double(height)*height))*scale;
             matrix[5] = height*scale; matrix[10] = -scale;
-            assert(VehicleLocalBasisLooksValid(matrix) == reference(matrix));
+            assert(AffineBasisLooksValid(matrix) == reference(matrix));
         }
-    assert(!VehicleLocalBasisLooksValid(nullptr));
+    assert(!AffineBasisLooksValid(nullptr));
     for (float invalid : {std::numeric_limits<float>::infinity(),
         std::numeric_limits<float>::quiet_NaN()})
         for (unsigned row = 0; row < 3; ++row)
@@ -245,7 +248,7 @@ static void CheckVehicleBasisSquaredAdmission()
             {
                 float matrix[16]{}; matrix[0] = matrix[5] = matrix[10] = 1;
                 matrix[row*4+col] = invalid;
-                assert(!VehicleLocalBasisLooksValid(matrix));
+                assert(!AffineBasisLooksValid(matrix));
             }
 }
 
@@ -254,20 +257,20 @@ static void CheckGpuMetadataAndVehicleRenderOrigin()
     float rigid[16] = {};
     rigid[0] = rigid[5] = rigid[10] = rigid[15] = 1;
     rigid[15] = std::numeric_limits<float>::quiet_NaN();
-    assert(!TransformLooksValid(rigid)); // CPU/reference validation remains strict.
-    assert(TransformLooksValid(rigid, true)); // GPU [15] is independent metadata.
+    assert(!RigidTransformLooksValid(rigid)); // CPU/reference validation remains strict.
+    assert(RigidTransformLooksValid(rigid, true)); // GPU [15] is independent metadata.
     for (int index = 0; index < 15; ++index)
     {
         const float saved = rigid[index];
         rigid[index] = std::numeric_limits<float>::quiet_NaN();
-        assert(!TransformLooksValid(rigid, true));
+        assert(!RigidTransformLooksValid(rigid, true));
         rigid[index] = saved;
     }
     float destination[16] = {}, pose[16] = {};
     destination[15] = rigid[15];
     uint32_t metadata = 0, after = 0;
     memcpy(&metadata, destination + 15, sizeof(metadata));
-    WriteScenePoseForUpload(destination, pose);
+    CopyPoseWithoutMetadata(destination, pose);
     memcpy(&after, destination + 15, sizeof(after));
     assert(metadata == after);
 
@@ -285,13 +288,13 @@ static void CheckGpuMetadataAndVehicleRenderOrigin()
     auto& slot = tracker.slots.front();
     slot.lastMatchedGeneration = 20;
     slot.entry.hasPrev = true; slot.entry.currTick = 10;
-    slot.entry.presentedFrameGeneration = 20;
+    slot.entry.presentedGeneration = 20;
     memcpy(slot.entry.curr, root, sizeof(root));
     slot.entry.curr[15] = 123;
     assert(RepeatedSceneUploadSlot(tracker, root, 20, 10) == &slot);
     float wheel[16]; memcpy(wheel, root, sizeof(wheel));
     wheel[4] = 0.3f; wheel[12] += 0.8f; wheel[13] -= 2;
-    assert(!TransformLooksValid(wheel, true) && VehicleLocalBasisLooksValid(wheel));
+    assert(!RigidTransformLooksValid(wheel, true) && AffineBasisLooksValid(wheel));
     assert(!VehicleLocalTransformLooksValid(wheel, reference, 20, 10));
     assert(!ObserveVehicleRenderOrigin(wheel, 272, reference, 20, 10));
     assert(ObserveVehicleRenderOrigin(root, 64, reference, 20, 10));
@@ -326,7 +329,7 @@ static void CheckAdmittedShearedWheelInterpolation()
 {
     // Symmetric authored stretch with a 0.10 off-diagonal term. Its RAW
     // row-dot is ~0.20, so the restored global +/-0.15 admission gate rejects
-    // it. We still exercise SceneMtxInterpolate directly here to regression-test
+    // it. We still exercise InterpolateWorldMatrix directly here to regression-test
     // the polar-stretch fallback independently of admission.
     for (bool mirrored : {false, true})
     {
@@ -345,12 +348,12 @@ static void CheckAdmittedShearedWheelInterpolation()
         // rejected by the restored +/-0.15 gate. After the 0.6 rad rotation,
         // the current endpoint has raw row-dot ~= 0.072 with row lengths still
         // inside [0.85, 1.15], so it is globally admissible.
-        assert(!TransformLooksValid(previous) && TransformLooksValid(current));
+        assert(!RigidTransformLooksValid(previous) && RigidTransformLooksValid(current));
         // Direct interpolation below is intentional: this block tests the
         // interpolation primitive even though the previous endpoint itself
         // would not pass production admission.
         previous[12] = 100; current[12] = 102;
-        SceneMtxInterpolate(output, previous, current, 0.5);
+        InterpolateWorldMatrix(output, previous, current, 0.5);
         const double hc = std::cos(angle * 0.5), hs = std::sin(angle * 0.5);
         const double expected[] = {hc - hs * 0.1, hc * 0.1 - hs, 0,
             hs + hc * 0.1, hs * 0.1 + hc, 0, 0, 0, 1};
@@ -358,10 +361,10 @@ static void CheckAdmittedShearedWheelInterpolation()
             for (int col = 0; col < 3; ++col)
                 assert(std::fabs(output[row * 4 + col] -
                     expected[row * 3 + col] * (mirrored && row == 0 ? -1 : 1)) < 1e-5);
-        assert(std::fabs(MatrixPosition(output, 0) - 101) < 1e-6);
+        assert(std::fabs(WorldMatrixPosition(output, 0) - 101) < 1e-6);
         // A handedness change cannot be slerped: retain the current basis.
         for (int col = 0; col < 3; ++col) current[col] = -current[col];
-        SceneMtxInterpolate(output, previous, current, 0.5);
+        InterpolateWorldMatrix(output, previous, current, 0.5);
         for (int row = 0; row < 3; ++row)
             for (int col = 0; col < 3; ++col)
                 assert(output[row * 4 + col] == current[row * 4 + col]);
@@ -376,12 +379,12 @@ int main()
     CheckSunShadowTimeline();
     // With no game image in this
     // fixture, signature validation must fail rather than report availability.
-    g_pipelineOverrideEnabled.store(false);
+    g_highFpsPresentationEnabled.store(false);
     assert(!InstallShadowCameraHook());
     assert(!g_originalShadowBuilder);
-    InitializeCriticalSection(&g_lock);
+    InitializeCriticalSection(&g_presentationLock);
     g_finalizeShadowCamera = Finalize; g_originalShadowBuilder = Build;
-    g_active.store(true); g_pipelineOverrideEnabled.store(true);
+    g_presentationActive.store(true); g_highFpsPresentationEnabled.store(true);
     alignas(16) uint8_t frame[0x110] = {}, camera[0x5c0] = {}, owner[0xf0] = {}, light[0x960] = {};
     alignas(16) uint8_t shadowConfig[0x878] = {};
     *reinterpret_cast<unsigned*>(shadowConfig + 0x7f0) = 1024;
@@ -395,8 +398,8 @@ int main()
     *reinterpret_cast<unsigned*>(frame + 0x84) = 1;
     WritePtr(ownerAddress + 0x60, reinterpret_cast<uintptr_t>(renderedBlock));
     *reinterpret_cast<unsigned*>(owner + 0x54) = 1;
-    LONG64 generation = 1; g_frameGenerationAddress.store(reinterpret_cast<uintptr_t>(&generation));
-    const double step = 1.0 / 60;
+    LONG64 generation = 1; g_frameClockGenerationAddress.store(reinterpret_cast<uintptr_t>(&generation));
+    const double stepSeconds = 1.0 / 60;
     NativeCameraPose pose = {};
     pose.high[0] = 83200; pose.high[1] = 52000; pose.high[2] = 200;
     pose.high[3] = 42; pose.low[3] = -7; pose.rotation[3] = 1;
@@ -411,25 +414,14 @@ int main()
     memcpy(owner + 0x10, nativeSun, sizeof(nativeSun));
     uint8_t nativeCameraBefore[sizeof(camera)]; memcpy(nativeCameraBefore, camera, sizeof(camera));
     const unsigned beforeFinalize = finalized;
-    HookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
+    LegacyHookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
     assert(finalized == beforeFinalize + 3); // only the mock native builder's three cameras
     assert(std::fabs(capturedCameraX - 83200.125) < 1e-5 && std::fabs(capturedSunAngle - 0.4) < 1e-6);
     assert(memcmp(nativeCameraBefore, camera, sizeof(camera)) == 0);
     assert(memcmp(nativeSun, owner + 0x10, sizeof(nativeSun)) == 0);
     assert(g_shadowCameras.empty());
     // Restore the production default for the interpolation regression cases.
-    g_pipelineOverrideEnabled.store(true);
-    const MappedKey worldKey = {nullptr, reinterpret_cast<ID3D11Resource*>(0x9000)};
-    const auto worldUpload = [&](LONG64 tick)
-    {
-        BeginCleanGpuTick(tick);
-        auto& slots = g_sceneMtx[worldKey].slots;
-        if (slots.empty()) slots.resize(1);
-        float world[16] = {};
-        world[0] = world[5] = world[10] = world[15] = 1;
-        world[12] = float(tick-10);
-        ObserveCleanGpuCandidate(slots[0], world, generation, tick, tick*step);
-    };
+    g_highFpsPresentationEnabled.store(true);
     for (unsigned tick = 10; tick <= 12; ++tick)
     {
         const double movement = tick - 10;
@@ -440,13 +432,12 @@ int main()
         float rawSun[] = {float(std::cos(movement * 0.4)), float(std::sin(movement * 0.4)), 0, 77};
         memcpy(owner + 0x10, rawSun, sizeof(rawSun));
         shadowWidth = tick == 10 ? 32.0f : 40.0f; // native lens changes must stay coherent
-        PublishExactFrameMeta(generation, tick - 1, tick, (tick - 1) * step, tick * step, (tick - 0.5) * step);
-        if (tick & 1) worldUpload(tick); // exercise both producer orders
+        PublishFrameClock(generation, tick - 1, tick, (tick - 1) * stepSeconds, tick * stepSeconds, (tick - 0.5) * stepSeconds);
+        PublishReferenceCpuPresentationCohort(generation,tick,tick*stepSeconds,stepSeconds);
         uint8_t beforeCamera[sizeof(camera)], beforeFrame[sizeof(frame)]; float beforeOrigin[8];
         memcpy(beforeCamera, camera, sizeof(camera)); memcpy(beforeFrame, frame, sizeof(frame));
         memcpy(beforeOrigin, origin, sizeof(origin));
-        HookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
-        if (!(tick & 1)) worldUpload(tick);
+        LegacyHookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
         assert(memcmp(beforeCamera, camera, sizeof(camera)) == 0);
         assert(memcmp(beforeFrame, frame, sizeof(frame)) == 0);
         assert(memcmp(beforeOrigin, origin, sizeof(origin)) == 0);
@@ -458,22 +449,19 @@ int main()
         if (tick == 12)
         {
             const auto& shadow = g_shadowCameras.at(ownerAddress).entry;
-            assert(CacheCleanGpuPresentation(g_sceneMtx[worldKey].slots[0], generation));
-            const auto& scene = g_sceneMtx[worldKey].slots[0].entry;
-            assert(shadow.presentedPhysicsTime == scene.presentedPhysicsTime);
-            assert(std::fabs(capturedCameraX-MatrixPosition(scene.presentedFrameOutput,0)-83200.125) < 1e-5);
+            assert(std::fabs(TestPresentedPhysicsTime(shadow)-(tick-.5)*stepSeconds)<1e-12);
         }
         assert(*reinterpret_cast<float*>(renderedBlock + 0x40) == shadowWidth);
         CheckReceiverProjection();
         uint8_t previous[sizeof(renderedBlock)]; memcpy(previous, renderedBlock, sizeof(previous));
-        HookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
+        LegacyHookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
         assert(memcmp(previous, renderedBlock, sizeof(previous)) == 0);
         ++generation;
     }
     // Same live interval, different phase; native sun remains at 0.8 rad.
-    PublishExactFrameMeta(generation, 11, 12, 11 * step, 12 * step, 11.75 * step);
-    HookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
-    worldUpload(12);
+    PublishFrameClock(generation, 11, 12, 11 * stepSeconds, 12 * stepSeconds, 11.75 * stepSeconds);
+    PublishReferenceCpuPresentationCohort(generation,12,12*stepSeconds,stepSeconds);
+    LegacyHookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
     assert(std::fabs(capturedCameraX - 83201.875) < 1e-5);
     assert(std::fabs(capturedSunAngle-0.8) < 1e-6);
     CheckReceiverProjection();
@@ -485,38 +473,35 @@ int main()
     origin[4] = 8.125f;
     const float nextSun[] = {float(std::cos(0.8)), float(std::sin(0.8)), 0, 77};
     memcpy(owner + 0x10, nextSun, sizeof(nextSun));
-    PublishExactFrameMeta(generation, 15, 16, 15*step, 16*step, 15.3*step);
-    worldUpload(16);
-    HookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
+    PublishFrameClock(generation, 15, 16, 15*stepSeconds, 16*stepSeconds, 15.3*stepSeconds);
+    PublishReferenceCpuPresentationCohort(generation,16,16*stepSeconds,stepSeconds);
+    LegacyHookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
     assert(std::fabs(capturedSunAngle - 0.8) < 1e-6);
     assert(std::fabs(capturedCameraX - 83205.425) < 1e-5);
-    assert(g_shadowCameras.at(ownerAddress).entry.presentedEndTick == 16);
-    assert(CacheCleanGpuPresentation(g_sceneMtx[worldKey].slots[0], generation));
-    assert(std::fabs(capturedCameraX-MatrixPosition(g_sceneMtx[worldKey].slots[0].entry.presentedFrameOutput,0)-83200.125) < 1e-5);
+    assert(std::fabs(TestPresentedPhysicsTime(g_shadowCameras.at(ownerAddress).entry)-15.3*stepSeconds)<1e-12);
     assert(memcmp(nextSun, owner + 0x10, sizeof(nextSun)) == 0);
     CheckReceiverProjection();
-    const auto safeShadow = g_shadowCameras.at(ownerAddress).cleanSnapshots;
+    const auto safeShadow = g_shadowCameras.at(ownerAddress).finalizedSnapshots;
     ++generation;
-    PublishExactFrameMeta(generation, 15, 16, 15*step, 16*step, 15.3*step);
-    HookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
+    PublishFrameClock(generation, 15, 16, 15*stepSeconds, 16*stepSeconds, 15.3*stepSeconds);
+    LegacyHookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
     assert(std::fabs(capturedCameraX-83205.425) < 1e-5);
-    assert(g_shadowCameras.at(ownerAddress).entry.presentedEndTick == 16);
-    assert(memcmp(safeShadow.current, g_shadowCameras.at(ownerAddress).cleanSnapshots.current, 64) == 0);
+    assert(memcmp(safeShadow.current, g_shadowCameras.at(ownerAddress).finalizedSnapshots.current, 64) == 0);
     assert(memcmp(nextSun, owner+0x10, sizeof(nextSun)) == 0);
     CheckReceiverProjection();
     ++generation;
-    PublishExactFrameMeta(generation, 15, 16, 15*step, 16*step, 15.3*step);
+    PublishFrameClock(generation, 15, 16, 15*stepSeconds, 16*stepSeconds, 15.3*stepSeconds);
     // Clock/pipeline/auxiliary-view fallback uses original native arguments.
-    g_frameGenerationAddress.store(0);
-    HookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
+    g_frameClockGenerationAddress.store(0);
+    LegacyHookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
     assert(std::fabs(capturedCameraX - 83206.125) < 1e-5 && std::fabs(capturedSunAngle - 0.8) < 1e-6);
-    g_frameGenerationAddress.store(reinterpret_cast<uintptr_t>(&generation));
-    g_pipelineOverrideEnabled.store(false);
-    HookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
+    g_frameClockGenerationAddress.store(reinterpret_cast<uintptr_t>(&generation));
+    g_highFpsPresentationEnabled.store(false);
+    LegacyHookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
     assert(std::fabs(capturedCameraX - 83206.125) < 1e-5);
-    g_pipelineOverrideEnabled.store(true);
+    g_highFpsPresentationEnabled.store(true);
     *reinterpret_cast<unsigned*>(frame + 0x84) = 2;
-    HookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
+    LegacyHookShadowBuilder(ownerAddress, nativeFrame, 0x1234);
     assert(std::fabs(capturedSunAngle - 0.8) < 1e-6);
     *reinterpret_cast<unsigned*>(frame + 0x84) = 1;
     // The native builder derives every cascade and receiver lookup from the
@@ -529,8 +514,8 @@ int main()
     assert(CatchSunBuilderException(ownerAddress,nativeFrame,nextSun,presentedSun));
     assert(!memcmp(owner+0x10,nextSun,sizeof(nextSun)));
     g_originalShadowBuilder = Build;
-    ResetTracking(); assert(g_shadowCameras.empty() && SunShadowTimeline::histories.empty());
-    g_pipelineOverrideEnabled.store(false);
-    DeleteCriticalSection(&g_lock);
+    ResetLegacySceneFixtures(); assert(g_shadowCameras.empty() && SunShadowTimeline::histories.empty());
+    g_highFpsPresentationEnabled.store(false);
+    DeleteCriticalSection(&g_presentationLock);
     puts("Shadow camera tests passed (native atlas inputs, shared camera/world timing, separate solar timeline at 120/240/250 FPS, held-key cadence, unit direction, coherent native cascades/receivers, cuts/gaps/repeats and exception restoration).");
 }

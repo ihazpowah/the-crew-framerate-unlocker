@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.15)
+project(InterpolatorChecks LANGUAGES CXX)
+add_executable(InterpolatorTests InterpolatorTests.cpp)
+target_compile_features(InterpolatorTests PRIVATE cxx_std_17)
+# Assertions are acceptance checks, including in optimized configurations.
+if(MSVC)
+  target_compile_options(InterpolatorTests PRIVATE /UNDEBUG)
+else()
+  target_compile_options(InterpolatorTests PRIVATE -UNDEBUG)
+endif()
+enable_testing()
+add_test(NAME InterpolatorTests COMMAND InterpolatorTests)

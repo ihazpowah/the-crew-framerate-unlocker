@@ -134,8 +134,15 @@ if not exist "%OUTDIR%" mkdir "%OUTDIR%"
 if errorlevel 1 goto :fail
 if not exist "%CHECKDIR%" mkdir "%CHECKDIR%"
 if errorlevel 1 goto :fail
+rem Portable checks intentionally receive no MinHook include path or native libraries.
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%ROOT%\tests\interpolator\BoundaryTests.ps1" -ProjectRoot "%ROOT%"
+if errorlevel 1 goto :fail
+cl /nologo /O2 /MT /GS /EHsc /std:c++17 /Fo:"%CHECKDIR%\InterpolatorTests.obj" /Fe:"%CHECKDIR%\InterpolatorTests.exe" "%ROOT%\tests\interpolator\InterpolatorTests.cpp"
+if errorlevel 1 goto :fail
+"%CHECKDIR%\InterpolatorTests.exe"
+if not "%errorlevel%"=="0" goto :fail
 for %%P in (A B) do (
-  cl /nologo /O2 /MT /GS /EHsc /std:c++17 /LD /I"%MH%\include" /Fo:"%CHECKDIR%\NativeHookChain%%P.obj" "%ROOT%\tests\NativeHookChainFixture.cpp" /link "buffer.obj" "hook.obj" "trampoline.obj" "hde64.obj" /OUT:"%CHECKDIR%\NativeHookChain%%P.dll"
+  cl /nologo /O2 /MT /GS /EHsc /std:c++17 /LD /I"%MH%\include" /Fo:"%CHECKDIR%\NativeHookChain%%P.obj" "%ROOT%\tests\native\hooks\NativeHookChainFixture.cpp" /link "buffer.obj" "hook.obj" "trampoline.obj" "hde64.obj" /OUT:"%CHECKDIR%\NativeHookChain%%P.dll"
   if errorlevel 1 goto :fail
 )
 call :run_check ShadowCameraTests
@@ -186,6 +193,7 @@ link /nologo /DLL /DYNAMICBASE /HIGHENTROPYVA /NXCOMPAT ^
   "trampoline.obj" ^
   "hde64.obj" ^
    d3d11.lib ^
+   dxgi.lib ^
    winmm.lib ^
    user32.lib
 
@@ -247,7 +255,7 @@ cl /nologo /O2 /MT /GS /EHsc /std:c++17 /I"%MH%\include" ^
   /Fo:"%CHECKDIR%\%~1.obj" /Fe:"%CHECKDIR%\%~1.exe" ^
   "%ROOT%\tests\%~1.cpp" /link ^
   "%CD%\buffer.obj" "%CD%\hook.obj" "%CD%\trampoline.obj" "%CD%\hde64.obj" ^
-  d3d11.lib winmm.lib user32.lib
+  d3d11.lib dxgi.lib winmm.lib user32.lib
 if not "%errorlevel%"=="0" exit /b 1
 "%CHECKDIR%\%~1.exe"
 if not "%errorlevel%"=="0" (

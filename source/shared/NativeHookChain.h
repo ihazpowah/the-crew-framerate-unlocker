@@ -34,7 +34,7 @@ static BOOL CALLBACK Initialize(PINIT_ONCE, PVOID, PVOID*)
 #define TheCrewFramerateUnlocker_CHAIN_WRAPPER(result, name, rva, parameters, arguments) \
 static result __fastcall name parameters \
 { \
-    NativeHookChain::Frame frame = NativeHookChain::Enter(g_base + (rva), uintptr_t(_ReturnAddress())); \
+    NativeHookChain::Frame frame = NativeHookChain::Enter(g_gameModuleBase + (rva), uintptr_t(_ReturnAddress())); \
     NativeHookChain::Publish(&frame); \
     __try { return name##Body arguments; } \
     __finally { NativeHookChain::Leave(&frame); } \

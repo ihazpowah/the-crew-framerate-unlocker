@@ -4,9 +4,9 @@
 #include "../source/SkipIntro/TheCrew.SkipIntro.cpp"
 using namespace IntegratedController;
 namespace FramerateMenu = NativeGfx;
-#include "BootStateHookTests.h"
-#include "IntroSkipTests.h"
-#include "IntroScreenTests.h"
+#include "native/plugins/BootStateHookTests.h"
+#include "native/plugins/IntroSkipTests.h"
+#include "native/plugins/IntroScreenTests.h"
 int main()
 {
     BootStateHookRegression::Run();

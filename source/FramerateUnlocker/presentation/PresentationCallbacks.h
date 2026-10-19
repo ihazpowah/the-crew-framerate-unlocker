@@ -3,23 +3,15 @@
 // Cross-consumer callbacks used by the shared scene cohort collector.
 namespace IntegratedController
 {
-struct ShadowFrameClock;
-    static bool AmbientCameraAlignmentEnabled();
-    static void ResetAmbientCameraAlignment(); // caller holds g_lock
-    static void ResetAmbientMainCamera(); // caller holds g_lock
-    static void PublishAmbientMainCamera(const MappedKey&, const float*, const float*, LONG64, LONG64,
-        double, LONG64, LONG64, bool);
-    static void ObserveAmbientBuilder(uintptr_t, uintptr_t, uintptr_t, const uint8_t*, const ShadowFrameClock&);
-    static void InvalidateAmbientBuilder(uintptr_t);
-    static unsigned ProcessAmbientCameraBuffer(const MappedKey&, void*, unsigned);
-    static bool ProcessGpuCameraBuffer(const MappedKey&, void*, UINT);
-    static void ResetGpuCameraPosition(); // caller holds g_lock
-    static void FinalizeGpuCameraCohort(LONG64 tick, LONG64 generation, double time);
-    static void ResetGpuCameraCohorts(); // caller holds g_lock
-    static void FinalizeScreenSpaceFlareCohort(LONG64 tick, LONG64 generation, double time);
-    static void ResetScreenSpaceFlares(); // caller holds g_lock
-    static void FinalizeNativeLightCohort(LONG64 tick, LONG64 generation, double time);
-    static void ResetNativeLights(); // caller holds g_lock
-    static void FinalizeShadowCameraCohort(LONG64 tick, LONG64 generation, double time);
-    static void ResetShadowCamera(); // caller holds g_lock
+struct PresentationFrameClock;
+    static bool CpuInterpolationEnabled();
+    static void ResetCpuInterpolation(); // caller holds g_presentationLock
+    static void ObserveCpuCameraPacket(uintptr_t owner, uintptr_t source, uint64_t resource);
+    static bool ReadCpuPresentedCamera(LONG64 generation, LONG64 tick, float* world);
+    static bool ReadCpuFrameClock(PresentationFrameClock* clock);
+    static bool PrepareCpuShadowFrame(uintptr_t frame, uint8_t* frameCopy, uint8_t* cameraCopy, float* originCopy);
+
+    static void FinalizeLightSourceCohort(LONG64 tick, LONG64 generation, double timeSeconds);
+    static void ResetLightSourceHistories(); // caller holds g_presentationLock
+    static void ResetSunShadowTimeline(); // caller holds g_presentationLock
 } // namespace IntegratedController

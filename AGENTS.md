@@ -4,7 +4,10 @@ An x64 D3D11 ASI plugin that uncaps framerate and smooths vehicle motion in The 
 
 ## Source organization
 
-- FramerateUnlocker: TheCrew.FramerateUnlocker.cpp composes implementation headers into one C++17 translation unit. Modules cover runtime control, generated hooks, frame clocks, settings, menus, startup, presentation and D3D11 uploads.
+- source/interpolator: portable header-only C++17 math, owned histories, evaluation and indexed sessions under the interpolator namespace. No Windows, native game, graphics or hook dependencies.
+- source/FramerateUnlocker: TheCrew.FramerateUnlocker.cpp composes the framerate adapter into one translation unit. It owns native capture, validity and identity checks, clocks, hooks, settings, conversions and private delivery.
+- source/FramerateUnlocker/presentation/cpu: ordered CPU state, validation, capture, delivery and hook implementation headers composed by CpuInterpolation.h.
+- tests/interpolator: independent core checks and synthetic adapters. Native fixtures are grouped under tests/native; historical helpers are under tests/reference. Canonical suite entry points remain in the tests root.
 - SkipIntro: independent, always-enabled TheCrew.SkipIntro.asi handles intro movies, intro screens and boot state. No INI.
 - AdvancedGraphics: independent, always-enabled TheCrew.AdvancedGraphics.asi owns shadow-map and cubemap resolution settings and its Apply/discard menu. Uses TheCrew.AdvancedGraphics.dat; no INI.
 - Shared code owns native GFx values, menu ABI declarations, native memory access, settings storage and coordinated hook chaining. Mutable plugin state remains independent.
@@ -27,7 +30,7 @@ The canonical script:
    keep personal locations out of artifacts. Artifact checks reject the local
    profile name in binaries and final debugging symbols.
 3. Checks MinHook provenance and compiles its C sources.
-4. Runs build-cleanup checks and the six C++ regression suites with the same MinHook objects used by the plugin.
+4. Runs build-cleanup and independent portable-core checks, followed by the six native C++ regression suites with the same MinHook objects used by the plugin.
 5. Builds and validates the framerate ASI.
 6. Invokes build_TheCrew.AdvancedGraphics.bat, build_TheCrew.SkipIntro.bat and build_xinput1_3.bat, including their regressions and artifact checks.
 7. Deploys and verifies each exact artifact.
@@ -79,7 +82,9 @@ When a separately requested task requires launching the game:
 
 ## Settings
 
-The FPS menu offers native 30, native 60 and Unlimited, using the existing 1000 FPS cap. With VSync enabled, the runtime cap is limited to the primary display refresh rate without changing the displayed selection.
+The FPS menu offers native 30, native 60, unique Windows primary-display refresh rates above 60 and below 1000 supported at the current Windows resolution in ascending order, then Unlimited, using the existing 1000 FPS cap. Unlimited retains that software cap with VSync enabled and leaves presentation pacing to native VSync. Interpolation activation still uses the primary display refresh ceiling. Native 30/60 and the displayed selection are preserved.
+
+Menu display queries use DXGI for primary-output selection, the current desktop mode and available mode timings. Rates are rounded to the nearest whole FPS before deduplication, so 119.88 and 120 share one 120 option. The current mode must match the output's desktop bounds; current and enumerated dimensions are normalized for rotation. This does not change the Windows display mode.
 
 Apply stores the selection in TheCrew.FramerateUnlocker.dat beside the ASI. Legacy FPS-only DAT files remain readable and upgrade on save without changing the stored FPS. The framerate plugin requires no INI.
 
@@ -89,6 +94,7 @@ Use TheCrewFramerateUnlocker as the product name. Keep this document free of fil
 
 ## CPU performance reporting
 
+- Use the recorded parked free-roam workload as the primary reference for future synthetic CPU benchmarks: 336–352 full-path transforms, 8–12 full-path wheels, 128 full-path bones, plus roughly 8–22 traffic transforms and 32–88 traffic wheels. No traffic bone palettes were captured. Keep full interpolation enabled for all objects. Treat larger per-vehicle bone/transform populations as stress tests, not representative gameplay. Recorded counts do not establish motion distributions, palette layout, or total plugin CPU cost.
 - Report percentage improvement and milliseconds saved per render frame against the same baseline and workload.
 - Label results measured, synthetic or estimated. If render-frame timing is unmeasured, say so. Never relabel per-operation or per-physics-tick savings as per-render-frame savings.
 - Prioritize meaningful total CPU frame-time reductions. Around 0.01 ms saved per operation or tick is a minor optimization, not evidence of a meaningful gameplay improvement.

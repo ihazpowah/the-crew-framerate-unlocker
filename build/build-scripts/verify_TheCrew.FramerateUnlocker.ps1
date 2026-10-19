@@ -30,7 +30,7 @@ try {
         if (Get-Process -Name TheCrew -ErrorAction SilentlyContinue) {
             throw 'Fully close TheCrew.exe before running the build script.'
         }
-        foreach ($parent in @('build', 'build\build-scripts', 'source\FramerateUnlocker', 'tests')) {
+        foreach ($parent in @('build', 'build\build-scripts', 'source\FramerateUnlocker', 'source\interpolator', 'tests')) {
             $path = Join-Path $ProjectRoot $parent
             if (-not (Test-Path -LiteralPath $path -PathType Container)) {
                 throw "Required project directory is missing: $path"

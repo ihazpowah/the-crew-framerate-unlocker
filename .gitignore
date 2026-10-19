@@ -14,3 +14,7 @@
 .vs/
 __pycache__/
 *.pyc
+
+# Local benchmarks and investigation material.
+/benchmarks/
+/docs/evidence/

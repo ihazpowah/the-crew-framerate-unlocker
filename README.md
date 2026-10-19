@@ -17,11 +17,18 @@ The proxy belongs beside the game executable; ASIs belong in the installation's
 scripts directory. Each ASI is optional. A missing or failed plugin does not
 prevent the proxy from trying the others or forwarding XInput calls.
 
-The FPS menu offers **30**, **60** and **Unlimited**. Unlimited uses a 1000 FPS
-cap. With VSync enabled, the runtime cap is limited to the current Windows
-primary-display refresh rate without changing the displayed selection.
+The FPS menu offers **30**, **60**, supported Windows primary-display refresh
+rates above 60 Hz supported at the current Windows resolution in ascending
+order, then **Unlimited**. Fractional timings are rounded to the nearest whole
+FPS and grouped (for example, 119.88/120 share one 120 option). Duplicate rates
+are shown once; rates at or above the existing 1000 FPS safety cap are omitted.
+Display selection, current resolution and mode timings are queried through DXGI.
+Unlimited uses a 1000 FPS
+cap, including with VSync enabled, so native VSync controls presentation pacing.
+The displayed selection stays unchanged.
 Native 30/60 retain native presentation; effective limits above 60 enable the
-interpolation pipeline.
+interpolation pipeline. With VSync enabled, activation uses the primary display
+refresh ceiling independently of Unlimited's software cap.
 
 Apply saves the FPS selection in TheCrew.FramerateUnlocker.dat beside the ASI.
 Legacy FPS-only DAT files remain readable and upgrade on save without changing
@@ -118,13 +125,15 @@ eligible for version control.
 
 | Location | Contents |
 | --- | --- |
-| [FramerateUnlocker](source/FramerateUnlocker/README.md) | Ordered implementation modules, composed into one C++17 translation unit. |
+| [Interpolator](source/interpolator/README.md) | Portable header-only C++17 math, histories, evaluation and indexed sessions. |
+| [The Crew adapter](source/FramerateUnlocker/README.md) | Native capture, validation, clocks, hooks and private delivery, composed into one translation unit. |
 | [AdvancedGraphics](source/AdvancedGraphics/README.md) | Independent graphics menu and resolution backends. |
 | [SkipIntro](source/SkipIntro/README.md) | Independent startup hooks and intro handling. |
 | source/shared | GFx ownership, menu ABI, native memory, DAT storage, reusable pools and coordinated hook chaining. |
 | source/xinput1_3_wrapper | Optional-plugin loader and XInput forwarding. |
 | build/build-scripts | Build entry points, shared toolchain setup, privacy wrapper, artifact verification and cleanup. |
 | [Tests](tests/README.md) | Regression coverage and reference helpers. |
+| [Architecture](docs/Architecture.md) | CPU composition, module boundaries and native fixture layout. |
 | [Project instructions](AGENTS.md) | Build, deployment and gameplay-task rules. |
 
 Passing regressions does not establish that every gameplay visual issue is

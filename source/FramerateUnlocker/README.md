@@ -1,92 +1,118 @@
-# FramerateUnlocker source
+# The Crew adapter
 
-TheCrew.FramerateUnlocker.cpp is the ASI entry point and ordered composition of
-the production modules. It is compiled as one C++17 translation unit. Headers
-are included at file scope and retain their own namespace and include guards.
-Do not compile implementation headers as separate translation units.
+TheCrew.FramerateUnlocker.cpp composes the production headers into one C++17
+translation unit. Implementation headers are not separate translation units.
+
+The adapter composes the portable [interpolator](../interpolator/README.md).
+It owns native discovery, validation, synchronization, clocks, conversions and
+private delivery. Numeric algorithms and retained history/storage implementations
+live in the core; the adapter supplies game-specific policies and pure codecs
+for its owned numeric samples. No core operation reads native pointers.
 
 ## Module ownership
 
 | Directory | Responsibility |
 | --- | --- |
-| runtime | Platform dependencies, plugin/controller state, FPS enforcement, stage resolution and network-worker repair. |
+| runtime | Plugin/controller state, FPS enforcement, stage resolution and network-worker repair. |
 | hooks | Near allocation and generated x64 callback stubs. |
-| clock | Physics-time metadata and immutable render-frame clock publication. |
+| clock | Immutable physics-time intervals and render-frame publication. |
 | config | Adjacent DAT path and saved FPS selection. |
-| menu | FPS choices and native preview, Apply and discard handling. |
-| startup | Plugin worker initialization. |
-| presentation | Native camera capture, GPU camera presentation, vehicle basis handling and minimap interpolation. |
-| presentation/scene | Snapshot histories, upload identity, matrix interpolation, endpoint correction, cohorts and player-root capture. |
-| presentation/effects | GPU-camera projection and vehicle screen-space flare cohorts. |
-| presentation/lighting | Native light sources, cone/point presentation, retained providers and delayed uploads. |
-| presentation/shadows | Private shadow-camera inputs and a separate solar-direction timeline. |
-| rendering | Native upload admission, D3D11 hooks and resource tracking. |
+| menu | FPS choices, preview, Apply and discard. |
+| menu/DisplayRefreshRates.h | DXGI display queries shared by menu and runtime through DisplayModes. |
+| startup | Feature installation and controller-loop startup. |
+| presentation | CPU vehicle, prop, wheel, bone and camera interpolation; ownership discovery; minimap and above-car player tag presentation. |
+| presentation/cpu | Ordered CPU state, readability, resource lifetime, pose encoding, binding, capture, delivery and hook implementation headers. |
+| presentation/history | Core history aliases, native clock validation and source-light cohort publication. |
+| presentation/math | Split-coordinate encoding and padded basis bridges to the portable kernels. |
+| presentation/effects | Native vehicle-flare boundary and generic flare projection using the presented CPU camera. |
+| presentation/lighting | Native light-source interpolation before the native builder. |
+| presentation/shadows | Private CPU-selected shadow-camera inputs and the separate solar-direction timeline. |
+| presentation/MinimapHooks.h | Native minimap hook installation. |
+| presentation/PlayerTagNative.h | Verified Flash batch layouts, hook signatures and native addresses. |
 
-The entry point establishes dependencies in order: platform/settings and clocks;
-scene state and interpolation; upload tracking; controller, memory and hook
-helpers; camera/effect consumers; clock publication and FPS control; menus,
-lighting and startup.
+## Runtime behavior
 
-## Shared code and plugin boundaries
+The FPS menu offers native 30, native 60, unique Windows primary-display refresh
+rates above 60 and below 1000 supported at the current Windows resolution in
+ascending order, then Unlimited, using the existing 1000 FPS cap. DXGI rational
+timings are rounded to the nearest whole FPS before deduplication, grouping
+119.88/120 and similar fractional variants without changing the display mode.
+DXGI supplies primary-output selection, current desktop mode and available modes;
+the current-mode result must match the output's desktop bounds. Rotated outputs
+use desktop-oriented dimensions for both the current mode and the mode list.
+Unlimited retains that software cap with VSync enabled and leaves
+presentation pacing to native VSync. Interpolation activation still uses the
+primary display refresh ceiling. Native 30/60 and the displayed selection are preserved.
+Apply saves the selection in
+TheCrew.FramerateUnlocker.dat beside the ASI. Legacy FPS-only DAT files remain
+readable. No INI is required.
 
-The shared modules provide:
+CPU interpolation must install successfully before presentation becomes active.
+Startup owns that activation. Shadow, flare, minimap, menu and light hooks are
+optional; a rejected optional target does not stop the core controller loop.
+Capture follows the native producer join and validates ownership, native resource
+identities, current page protections and the fixed-step clock. Render consumers
+receive private frame-owned copies only at verified synchronous consumption
+boundaries. Native resource data remains unchanged.
 
-- NativeGfx.h: native value layout and ownership operations.
-- NativeMenuAbi.h: menu addresses, callback signatures and profile-settings lookup.
-- NativeMemory.h: exception-contained memory access and callback replacement.
-- NativeHookChain.h: serialized installation, recorded peer-patch validation and original-caller retention.
-- MenuSettings.h: versioned DAT storage, atomic writes and legacy FPS-only compatibility.
-- ReusablePool.h: stable-address storage, retirement and reuse for scene/light tracking.
+Ownership traversal caches replay every dependency during each lifetime-locked
+capture. Readability certificates remain local to that capture. Page queries
+use bounded batches, with metadata fallback for cold pages; batch sizes and
+index thresholds do not limit object admission.
 
-AdvancedGraphics and SkipIntro are separate ASIs. The framerate plugin owns FPS
-settings and presentation; it does not own intro bypass or graphics-resolution
-menus. Shared declarations do not combine plugin-local hook pointers or settings
-transactions.
+All supported objects remain eligible for interpolation. Active stationary
+objects refresh observation age. Inactive histories expire after both 60 unused
+physics ticks and one second, with incremental maintenance and storage
+compaction. Confirmed retirement can release histories earlier. Snapshot caps
+and identity, finite-data and native-layout guards remain intact.
 
-## Presentation and settings
+CPU publication closes native light-source cohorts independently of captured
+mesh count. Native light sources interpolate before construction; the game owns
+later light derivation, serialization, dirty scheduling and buffer delivery.
+There is no later CPU light-correction stage and no D3D interception.
 
-The FPS menu offers native 30, native 60 and Unlimited, using a 1000 FPS cap.
-VSync limits the effective cap to the primary display refresh rate while
-preserving the displayed selection. Effective limits above 60 enable the
-presentation pipeline. Apply stores TheCrew.FramerateUnlocker.dat beside the
-ASI; legacy FPS-only values remain readable. No INI is required.
+The shadow-builder hook uses the selected CPU camera and lets native code derive
+cascades, snapping and receiver data. Solar direction uses its own held-producer
+timeline. There is no separate production shadow-camera cohort history.
 
-NativeUploadRouting.h validates the upload descriptor, runtime index, field-copy
-layout, exact resource and size. Upload identity is scoped to the native call
-and restored on return or exception. Flash and unknown providers retain native
-behavior. Verified vehicle and wheel providers can use deformation admission;
-other scene providers retain strict matrix checks. Finite poses and valid
-clock metadata remain mandatory, and opaque upload metadata is preserved.
+Vehicle flares pass directly to the native builder within their verified vehicle
+call boundary. Generic flare anchors project through the presented CPU camera,
+including their camera-dependent depth threshold. There is no flare history
+interpolation. Minimap presentation has an independent native pose history.
 
-Minimap presentation uses immutable native vehicle poses on the physics clock,
-with independent identity and camera-override checks. Only a temporary pose
-passed to the native consumer changes; source vehicle/widget data stays native.
+Above-car player tags retain their native Flash layout, visibility, billboard
+basis, scale and lift. The Flash worker associates each owned batch with its
+vehicle binding; the final draw builder receives a private position correction
+from the same render snapshot as the car. Ambiguous shared batches and invalid
+or retired bindings fall back to native inputs. Optional null pose fields are
+valid in the supported binding mode.
 
-PresentationCallbacks.h connects earlier collectors to later consumers.
-LightPresentation.h composes cone and point handling. LateLightUploads.h shares
-pending-buffer storage, COM ownership and D3D11 delivery; cone and point modules
-retain their own provenance, clock and admission checks. Missing, stale,
-ambiguous or invalid inputs retain native fallback.
+Clocks use frame generation for render identity, physics tick for simulation identity, and seconds for interval fields. Resource generations, capture IDs and reset epochs remain distinct. Native handles and generated callback offsets preserve their layouts.
 
-## Build and regression coverage
+The render clock retains its live physics/generation fields at their existing
+ABI offsets. Retired data slots remain reserved holes. Legacy player-root capture,
+write-only frame stamps, render-active counters and the forwarding-only wheel
+writer hook are absent. The wheel resolver caller guard remains active.
 
-Run the canonical script from the project root:
+## Shared code and tests
 
-~~~powershell
-cmd /c "build\build-scripts\build_TheCrew.FramerateUnlocker.bat"
-~~~
+Shared code provides native GFx layouts, menu ABI declarations, safe memory
+access, coordinated hook chaining and DAT storage. Mutable plugin state remains
+independent of AdvancedGraphics, SkipIntro and the XInput proxy.
 
-All six framerate regression executables include the production entry point.
-The script also builds/tests the standalone plugins and proxy, verifies exact
-deployment and performs automatic cleanup. Final binaries, release manifests
-and the final framerate PDB remain; intermediates and regression binaries are
-removed after successful builds.
+Historical GPU association, player-root admission, endpoint reconstruction,
+shadow-camera fallback, pooled storage and later light-correction implementations
+live in tests. They are not included by the shipped ASI. Runtime diagnostics and
+benchmark controls are absent; saved captures remain historical evidence.
 
-Keep ABI layouts, hook signatures, callback behavior and presentation timing
-unchanged during structural edits. Reference helpers used only by tests stay
-outside the shipped plugin.
+Run build/build-scripts/build_TheCrew.FramerateUnlocker.bat from the project root.
+The canonical build runs independent portable checks and the six regression suites, builds the companion ASIs
+and proxy, validates and deploys the exact artifacts, and cleans intermediates.
+Preserve native ABI layouts, hook signatures and presentation timing when editing.
+Passing regressions does not establish that every gameplay visual issue is resolved.
 
-See the [project README](../../README.md) for toolchain, privacy, deployment and
-cleanup details, [project instructions](../../AGENTS.md) for workflow rules, and
-[regression coverage](../../tests/README.md) for the maintained suites.
-Passing regressions does not replace gameplay validation.
+See the project README, AGENTS.md and tests/README.md for the build workflow and
+regression coverage. Historical light-correction fixtures remain under
+tests/reference/light-correction.
+
+See [architecture](../../docs/Architecture.md) for CPU composition and test boundaries.

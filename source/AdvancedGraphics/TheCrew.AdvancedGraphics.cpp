@@ -25,7 +25,7 @@ static HMODULE g_graphicsModule = nullptr;
 static std::atomic<bool> g_graphicsDetaching{false};
 namespace IntegratedController
 {
-static uintptr_t g_base = 0, g_manager = 0;
+static uintptr_t g_gameModuleBase = 0, g_manager = 0;
 static std::wstring DatPath()
 {
     wchar_t path[MAX_PATH*4]{};
@@ -39,13 +39,13 @@ static std::wstring DatPath()
 }
 static bool ResolveGraphicsManager()
 {
-    g_base = uintptr_t(GetModuleHandleW(nullptr));
+    g_gameModuleBase = uintptr_t(GetModuleHandleW(nullptr));
     IMAGE_DOS_HEADER dos{}; IMAGE_NT_HEADERS64 nt{};
-    return SafeRead(g_base,&dos) && dos.e_magic == IMAGE_DOS_SIGNATURE && dos.e_lfanew > 0 &&
-        SafeRead(g_base+dos.e_lfanew,&nt) && nt.Signature == IMAGE_NT_SIGNATURE &&
+    return SafeRead(g_gameModuleBase,&dos) && dos.e_magic == IMAGE_DOS_SIGNATURE && dos.e_lfanew > 0 &&
+        SafeRead(g_gameModuleBase+dos.e_lfanew,&nt) && nt.Signature == IMAGE_NT_SIGNATURE &&
         nt.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64 &&
         nt.OptionalHeader.SizeOfImage == 0x535a000 &&
-        SafeRead(g_base+0x2c98a40,&g_manager) && g_manager;
+        SafeRead(g_gameModuleBase+0x2c98a40,&g_manager) && g_manager;
 }
 }
 #include "ShadowMapResolution.h"

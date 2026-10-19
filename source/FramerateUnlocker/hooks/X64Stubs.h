@@ -138,7 +138,7 @@ static void AddNativePipelineGate(
 {
     Add(bytes, 0x9c, 0x50);                    // preserve flags and rax
     Add(bytes, 0x48, 0xb8);
-    AddInt64(bytes, reinterpret_cast<uintptr_t>(&g_pipelineOverrideEnabled));
+    AddInt64(bytes, reinterpret_cast<uintptr_t>(&g_highFpsPresentationEnabled));
     Add(bytes, 0x80, 0x38, 0x00);              // cmp byte [rax], 0
     Add(bytes, 0x58);                          // restore rax (keeps cmp flags)
     const int patchedPath = AddJcc8(bytes, 0x75);
@@ -230,26 +230,18 @@ static std::vector<uint8_t> BuildRenderCallbackStub(
     Add(bytes, 0x49, 0xba);                    // helper clobbered r10
     AddInt64(bytes, data);
 
-    // Latch one published generation for the camera and GPU uploads.
+    // Latch one published generation for CPU camera and presentation consumers.
     Add(bytes, 0x4d, 0x8b, 0x9a);              // mov r11, [r10+published generation]
     AddInt32(bytes, static_cast<int32_t>(DataPublishedGenerationOffset));
     Add(bytes, 0x4d, 0x89, 0x9a);              // mov [r10+frame generation], r11
     AddInt32(bytes, static_cast<int32_t>(DataFrameGenerationOffset));
-    Add(bytes, 0x4d, 0x89, 0x9a);              // mov [r10+latched generation], r11
-    AddInt32(bytes, static_cast<int32_t>(DataLatchedGenerationOffset));
 
     // Let the native callback publish its model state without CPU overwrites.
     Add(bytes, 0x0f, 0x10, 0x44, 0x24, 0x20);  // restore incoming xmm0
     Add(bytes, 0x0f, 0x10, 0x4c, 0x24, 0x30);
     Add(bytes, 0x0f, 0x10, 0x54, 0x24, 0x40);
     Add(bytes, 0x0f, 0x10, 0x5c, 0x24, 0x50);
-    Add(bytes, 0x9c);
-    AddRipInstruction(bytes, stub, data + DataRenderActiveOffset, 0xf0, 0x48, 0xff, 0x05);
-    Add(bytes, 0x9d);
     AddRelativeBranch(bytes, stub, originalCallback, 0xe8);
-    Add(bytes, 0x9c);
-    AddRipInstruction(bytes, stub, data + DataRenderActiveOffset, 0xf0, 0x48, 0xff, 0x0d);
-    Add(bytes, 0x9d);
     Add(bytes, 0x48, 0x81, 0xc4);              // add rsp, 0xC8
     AddInt32(bytes, 0xC8);
     Add(bytes, 0xc3);
@@ -290,11 +282,44 @@ static std::vector<uint8_t> BuildPhysicsTickStub(
 }
 
 extern "C" void WINAPI CaptureNativeCameraPacket(uintptr_t packet, uintptr_t source, uintptr_t owner);
+extern "C" uintptr_t WINAPI ResolveCpuTransformSource(uintptr_t root, const uint64_t* handle, uintptr_t outer);
+extern "C" uintptr_t WINAPI ResolveCpuPaletteSource(uintptr_t root, const uint64_t* handle, uintptr_t outer);
 
-static std::vector<uint8_t> BuildCameraPacketStub(uintptr_t stub, uintptr_t data, uintptr_t moduleBase,
+static std::vector<uint8_t> BuildCpuTransformSourceStub(uintptr_t stub, uintptr_t moduleBase,
+    uintptr_t helper = reinterpret_cast<uintptr_t>(&ResolveCpuTransformSource), uintptr_t resumeRva=0x169f2dc)
+{
+    // Replaces only the five-byte resolver CALL at 0x169F2D7. The private
+    // resource is frame-owned, so it survives every downstream writer read.
+    std::vector<uint8_t> bytes;
+    Add(bytes, 0x9c, 0x48, 0x81, 0xec); AddInt32(bytes, 0xc8);
+    for (int reg=0; reg<6; ++reg)
+        Add(bytes,0x0f,0x11,0x44+reg*8,0x24,0x20+reg*0x10);
+    const uint8_t regs[][3] = {{0x48,0x89,0x8c},{0x48,0x89,0x94},
+        {0x4c,0x89,0x84},{0x4c,0x89,0x8c},{0x4c,0x89,0x94},{0x4c,0x89,0x9c}};
+    for (int reg=0; reg<6; ++reg)
+    { Add(bytes,regs[reg][0],regs[reg][1],regs[reg][2],0x24); AddInt32(bytes,0x80+reg*8); }
+    Add(bytes,0x49,0x89,0xd8); // RBX outer -> R8; RCX/RDX remain root/handle
+    Add(bytes,0x48,0xb8); AddInt64(bytes,helper); Add(bytes,0xff,0xd0);
+    Add(bytes,0x48,0x89,0x84,0x24); AddInt32(bytes,0xb0);
+    for (int reg=0; reg<6; ++reg)
+        Add(bytes,0x0f,0x10,0x44+reg*8,0x24,0x20+reg*0x10);
+    for (int reg=0; reg<6; ++reg)
+    { Add(bytes,regs[reg][0],0x8b,regs[reg][2],0x24); AddInt32(bytes,0x80+reg*8); }
+    Add(bytes,0x48,0x8b,0x84,0x24); AddInt32(bytes,0xb0);
+    Add(bytes,0x48,0x81,0xc4); AddInt32(bytes,0xc8); Add(bytes,0x9d);
+    AddRelativeBranch(bytes,stub,moduleBase+resumeRva,0xe9);
+    return bytes;
+}
+static std::vector<uint8_t> BuildCpuPaletteSourceStub(uintptr_t stub,uintptr_t moduleBase,
+    uintptr_t helper=reinterpret_cast<uintptr_t>(&ResolveCpuPaletteSource))
+{
+    // Palette observer 0x16A3F97 has the same call-site stack/register ABI.
+    return BuildCpuTransformSourceStub(stub,moduleBase,helper,0x16a3f9c);
+}
+
+static std::vector<uint8_t> BuildCameraPacketStub(uintptr_t stub, uintptr_t moduleBase,
     uintptr_t helper = reinterpret_cast<uintptr_t>(&CaptureNativeCameraPacket))
 {
-    (void)data;
     std::vector<uint8_t> bytes;
     AddNativePipelineGate(bytes, stub, moduleBase + CameraPacketResumeRva,
         moduleBase + CameraPacketLeaTargetRva);

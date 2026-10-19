@@ -1,12 +1,19 @@
 #pragma once
 
 #include "../menu/NativeMenu.h"
+#include "../menu/DisplayRefreshRates.h"
 
 // Apply the FPS target, refresh controller addresses and enforce the native interval.
 namespace IntegratedController
 {
-static auto g_readDisplaySettings = &EnumDisplaySettingsW;
 static uintptr_t g_appliedVsyncSettingsSlot = 0;
+
+static int ReadDisplayRefreshCeiling()
+{
+    DXGI_MODE_DESC mode{};
+    return DisplayModes::g_readCurrentDisplay(&mode)
+        ? DisplayModes::RoundedRefreshRate(mode.RefreshRate) : 0;
+}
 
 static void ResolveAppliedVsyncSource()
 {
@@ -14,9 +21,9 @@ static void ResolveAppliedVsyncSource()
     // this RIP-relative global. Validate the complete setter before using it.
     const uint8_t expected[] = {0x48,0x8b,0x05,0x71,0xd0,0x18,0x03,0x89,0x50,0x68,0xc3};
     uint8_t actual[sizeof(expected)]{};
-    g_appliedVsyncSettingsSlot = g_base &&
-        SafeCopyFrom(g_base + 0x3d2700, actual, sizeof(actual)) &&
-        memcmp(actual, expected, sizeof(expected)) == 0 ? g_base + 0x355f778 : 0;
+    g_appliedVsyncSettingsSlot = g_gameModuleBase &&
+        SafeCopyFrom(g_gameModuleBase + 0x3d2700, actual, sizeof(actual)) &&
+        memcmp(actual, expected, sizeof(expected)) == 0 ? g_gameModuleBase + 0x355f778 : 0;
 }
 
 static void RefreshAppliedVsync()
@@ -32,11 +39,8 @@ static void RefreshAppliedVsync()
     }
     else if (!g_vsyncRefreshCeiling.load(std::memory_order_acquire))
     {
-        DEVMODEW mode{};
-        mode.dmSize = sizeof(mode);
-        if (g_readDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &mode) &&
-            mode.dmDisplayFrequency > 1 && mode.dmDisplayFrequency <= 1000)
-            g_vsyncRefreshCeiling.store(int(mode.dmDisplayFrequency), std::memory_order_release);
+        const int fps=ReadDisplayRefreshCeiling();
+        if (fps) g_vsyncRefreshCeiling.store(fps,std::memory_order_release);
     }
 }
 
@@ -47,6 +51,14 @@ static int EffectiveTargetFps(int selected)
     return ceiling > 1 && fps > ceiling ? ceiling : fps;
 }
 
+static int NativeLimiterTargetFps(int selected,int effective)
+{
+    // Unlimited keeps the existing safety cap and leaves presentation pacing
+    // to native VSync. The refresh-limited effective target is still used for
+    // interpolation activation, independently of this software wait.
+    return selected == 1000 ? 1000 : effective;
+}
+
 static void ReadMenuRuntimeSettings(uintptr_t settings, bool saved)
 {
     // Native preview 0xa025f uses staged +0x4c to set the Present sync interval;
@@ -54,11 +66,7 @@ static void ReadMenuRuntimeSettings(uintptr_t settings, bool saved)
     const uintptr_t snapshot = settings + (saved ? 0x68 : 0);
     int vsync = 0, nativeFps = 0;
     if (!SafeRead(snapshot + 0x4c, &vsync)) return;
-    DEVMODEW mode{};
-    mode.dmSize = sizeof(mode);
-    const int ceiling = vsync && g_readDisplaySettings(nullptr, ENUM_CURRENT_SETTINGS, &mode) &&
-        mode.dmDisplayFrequency > 1 && mode.dmDisplayFrequency <= 1000
-        ? static_cast<int>(mode.dmDisplayFrequency) : 0;
+    const int ceiling = vsync ? ReadDisplayRefreshCeiling() : 0;
     g_vsyncRefreshCeiling.store(ceiling, std::memory_order_release);
     if (SafeRead(snapshot + 0x24, &nativeFps) && (nativeFps == 30 || nativeFps == 60))
         g_nativeMenuFps.store(nativeFps, std::memory_order_release);
@@ -67,9 +75,9 @@ static void ReadMenuRuntimeSettings(uintptr_t settings, bool saved)
 static void SetPipelineTarget(int fps)
 {
     const bool enabled = fps > 60;
-    if (g_pipelineOverrideEnabled.exchange(enabled, std::memory_order_acq_rel) != enabled)
+    if (g_highFpsPresentationEnabled.exchange(enabled, std::memory_order_acq_rel) != enabled)
     {
-        ResetTracking();
+        ResetPresentationHistories();
     }
 }
 
@@ -98,7 +106,7 @@ static bool ApplyTargetFps()
     }
     // Accept native 30/60 and an already matching target; reject unknown intervals.
     const float requested =
-        1.0f / static_cast<float>(effectiveFps);
+        1.0f / static_cast<float>(NativeLimiterTargetFps(targetFps,effectiveFps));
     const auto nearly = [](float a, float b)
     {
         return std::fabs(a-b) <= 0.0000001f;
@@ -128,13 +136,13 @@ static void RefreshAddresses()
     uintptr_t newSubsystem = 0;
 
     if (TryResolveAll(
-            g_base, g_physicsStub, &newSubsystem))
+            g_gameModuleBase, g_physicsStub, &newSubsystem))
     {
         if (newSubsystem != g_subsystem)
         {
             g_subsystem = newSubsystem;
-            WritePtr(g_data + DataPhysicsSubsystemOffset, g_subsystem);
-            ResetTracking();
+            WritePtr(g_callbackData + DataPhysicsSubsystemOffset, g_subsystem);
+            ResetPresentationHistories();
         }
     }
 
@@ -158,7 +166,7 @@ static bool GuardTargetFps()
     if (fps < 2 || fps > 1000)
         return false;
     SetPipelineTarget(fps);
-    const float wanted = 1.0f / static_cast<float>(fps);
+    const float wanted = 1.0f / static_cast<float>(NativeLimiterTargetFps(selected,fps));
     float current = 0;
     if (!SafeRead(g_manager + 0x170, &current) || current == wanted ||
         !SafeCopyTo(g_manager + 0x170, &wanted, sizeof(wanted)))

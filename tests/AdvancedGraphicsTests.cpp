@@ -3,10 +3,10 @@
 #include "../source/AdvancedGraphics/TheCrew.AdvancedGraphics.cpp"
 using namespace IntegratedController;
 namespace FramerateMenu = IntegratedController::GraphicsMenu;
-#include "AdvancedGraphicsMenuTests.h"
-#include "AdvancedGraphicsFirstOpenTests.h"
-#include "CubemapResolutionTests.h"
-#include "ShadowMapResolutionTests.h"
+#include "native/plugins/AdvancedGraphicsMenuTests.h"
+#include "native/plugins/AdvancedGraphicsFirstOpenTests.h"
+#include "native/plugins/CubemapResolutionTests.h"
+#include "native/plugins/ShadowMapResolutionTests.h"
 int main()
 {
     setvbuf(stdout,nullptr,_IONBF,0);

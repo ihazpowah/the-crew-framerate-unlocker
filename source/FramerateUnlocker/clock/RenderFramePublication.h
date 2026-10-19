@@ -8,17 +8,18 @@ namespace IntegratedController
 // and player reference are published here for the real render frame.
 extern "C" void WINAPI PublishRenderFrameState()
 {
-    if (!g_pipelineOverrideEnabled.load(std::memory_order_acquire))
+
+    if (!g_highFpsPresentationEnabled.load(std::memory_order_acquire))
         return;
-    if (!g_data)
+    if (!g_callbackData)
         return;
-    const LONG64 nextGeneration = ReadI64(g_data + DataPublishedGenerationOffset) + 1;
+    const LONG64 nextGeneration = ReadI64(g_callbackData + DataPublishedGenerationOffset) + 1;
 
     // Read the native fixed-step remainder while the outer physics callback is
     // paused inside this nested render callback. This is the presentation phase
     // source used by the last build that visibly interpolated above native 60 Hz.
     float accumulator = 0.0f;
-    float step = 0.0f;
+    float stepSeconds = 0.0f;
     bool nativePhaseValid = false;
     double nativePhase = 0.0;
     const uintptr_t subsystem = g_subsystem.load(std::memory_order_acquire);
@@ -29,15 +30,15 @@ extern "C" void WINAPI PublishRenderFrameState()
             &accumulator) &&
         SafeRead(
             subsystem + PhysicsStepOffset,
-            &step) &&
+            &stepSeconds) &&
         Finite(accumulator) &&
-        Finite(step) &&
-        step > 0.0001f &&
-        step < 0.1000f)
+        Finite(stepSeconds) &&
+        stepSeconds > 0.0001f &&
+        stepSeconds < 0.1000f)
     {
         const double raw =
             static_cast<double>(accumulator) /
-            static_cast<double>(step);
+            static_cast<double>(stepSeconds);
 
         // Restore the phase handling from the last build that visibly produced
         // presentation-rate interpolation. Normalize the accumulator into the
@@ -54,7 +55,7 @@ extern "C" void WINAPI PublishRenderFrameState()
 
     const LONG64 capturedTick =
         ReadI64(
-            g_data + DataCapturedPhysicsTickOffset);
+            g_callbackData + DataCapturedPhysicsTickOffset);
 
     // Frame timing comes directly from the native fixed physics clock, matching
     // the last build that visibly interpolated above 60 FPS. Every render
@@ -65,50 +66,49 @@ extern "C" void WINAPI PublishRenderFrameState()
         ? frameCurrentTick - 1 : -1;
 
     const double physicsStepSeconds =
-        nativePhaseValid ? static_cast<double>(step) : 0.0;
+        nativePhaseValid ? static_cast<double>(stepSeconds) : 0.0;
 
-    const double previousTickTime =
+    const double previousTickTimeSeconds =
         framePreviousTick >= 0
             ? static_cast<double>(framePreviousTick) * physicsStepSeconds
             : 0.0;
-    const double currentTickTime =
+    const double currentTickTimeSeconds =
         frameCurrentTick >= 0
             ? static_cast<double>(frameCurrentTick) * physicsStepSeconds
             : 0.0;
-    const double framePhysicsTime =
+    const double framePhysicsTimeSeconds =
         framePreviousTick >= 0
-            ? previousTickTime + nativePhase * physicsStepSeconds
+            ? previousTickTimeSeconds + nativePhase * physicsStepSeconds
             : 0.0;
 
     double globalAlphaForFrame = 0.0;
     const bool framePhysicsTimeValid =
         framePreviousTick >= 0 &&
         AlphaFromPhysicsTimestamps(
-            previousTickTime,
-            currentTickTime,
-            framePhysicsTime,
+            previousTickTimeSeconds,
+            currentTickTimeSeconds,
+            framePhysicsTimeSeconds,
             &globalAlphaForFrame);
 
     MemoryBarrier();
 
     // Publish one GLOBAL fixed-physics time interval before making this
-    // generation visible. Camera and GPU consumers reconstruct alpha from these
-    // exact same timestamps; GPU upload time is never used as interpolation time.
+    // generation visible. Camera and presentation consumers reconstruct alpha from these
+    // exact same timestamps; serialization time never controls interpolation.
     if (!framePhysicsTimeValid)
         return;
 
-    PublishExactFrameMeta(
+    PublishFrameClock(
         nextGeneration,
         framePreviousTick,
         frameCurrentTick,
-        previousTickTime,
-        currentTickTime,
-        framePhysicsTime);
+        previousTickTimeSeconds,
+        currentTickTimeSeconds,
+        framePhysicsTimeSeconds);
 
-    CapturePlayerRootReference(subsystem, nextGeneration, capturedTick);
 
     WriteI64(
-        g_data +
+        g_callbackData +
         DataPublishedGenerationOffset,
         nextGeneration);
 }

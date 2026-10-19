@@ -16,7 +16,7 @@ static bool IsLiveNetworkService(uintptr_t object, uintptr_t manager)
     uintptr_t vtable = 0, owner = 0, lock = 0;
     char name[11] = {};
     CRITICAL_SECTION state = {};
-    return SafeRead(object, &vtable) && vtable == g_base + 0x20162b8 &&
+    return SafeRead(object, &vtable) && vtable == g_gameModuleBase + 0x20162b8 &&
         SafeRead(object + 0x10, &owner) && owner == manager &&
         SafeCopyFrom(object + 0x18, name, sizeof(name)) &&
         memcmp(name, "SvcNetwork", sizeof(name)) == 0 &&
@@ -33,11 +33,11 @@ static uintptr_t ResolveLiveNetworkService(uintptr_t supplied)
     {
         uintptr_t manager = 0, table = 0;
         uint32_t count = 0;
-        if (SafeRead(g_base + kManagerRva, &manager) && manager)
+        if (SafeRead(g_gameModuleBase + kManagerRva, &manager) && manager)
         {
             uintptr_t currentManager = 0;
             if (IsLiveNetworkService(supplied, manager) &&
-                SafeRead(g_base + kManagerRva, &currentManager) && currentManager == manager)
+                SafeRead(g_gameModuleBase + kManagerRva, &currentManager) && currentManager == manager)
                 return supplied;
             if (SafeRead(manager + 0x1f08, &table) && table &&
                 SafeRead(manager + 0x1f10, &count) && count == 57 &&
@@ -57,7 +57,7 @@ static uintptr_t ResolveLiveNetworkService(uintptr_t supplied)
                 }
                 uintptr_t managerAfter = 0, tableAfter = 0;
                 if (found && !ambiguous &&
-                    SafeRead(g_base + kManagerRva, &managerAfter) && managerAfter == manager &&
+                    SafeRead(g_gameModuleBase + kManagerRva, &managerAfter) && managerAfter == manager &&
                     SafeRead(manager + 0x1f08, &tableAfter) && tableAfter == table &&
                     IsLiveNetworkService(found, manager))
                     return found;
@@ -71,7 +71,7 @@ static uintptr_t ResolveLiveNetworkService(uintptr_t supplied)
 static uintptr_t DispatchWorkerObject(uintptr_t object, uintptr_t argument, uintptr_t caller)
 {
     uintptr_t nativeObject = object, nativeArgument = argument;
-    if (g_networkWorkerFix.load(std::memory_order_acquire) && caller == g_base + 0x2de3d9)
+    if (g_networkWorkerFix.load(std::memory_order_acquire) && caller == g_gameModuleBase + 0x2de3d9)
     {
         nativeObject = g_processDetaching.load(std::memory_order_acquire) ?
             0 : ResolveLiveNetworkService(object);
@@ -100,7 +100,7 @@ static uintptr_t HookWorkerObject(uintptr_t object, uintptr_t argument)
 static bool InstallNetworkWorkerHook()
 {
     // Mandatory wrong-service dispatch repair.
-    const uintptr_t target = g_base + 0x40e610;
+    const uintptr_t target = g_gameModuleBase + 0x40e610;
     const uint8_t expected[] = { 0x48, 0x89, 0x5c, 0x24, 0x18,
         0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83, 0xec, 0x20,
         0x48, 0x8b, 0xd9 };

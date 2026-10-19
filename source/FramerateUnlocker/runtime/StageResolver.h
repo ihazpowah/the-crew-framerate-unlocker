@@ -9,15 +9,15 @@ static bool TryFindStageNode(
 {
     uintptr_t list = manager + stage->listOffset;
     uintptr_t node = 0;
-    if (!ReadPtr(list + 8, &node))
+    if (!ReadNonNullPointer(list + 8, &node))
         return false;
 
     for (int index = 0; index < 128 && node; ++index)
     {
         uintptr_t ownerList = 0;
         uintptr_t callback = 0;
-        if (!ReadPtr(node + 0x10, &ownerList) ||
-            !ReadPtr(node + 0x28, &callback))
+        if (!ReadNonNullPointer(node + 0x10, &ownerList) ||
+            !ReadNonNullPointer(node + 0x28, &callback))
             return false;
 
         bool callbackOk =
@@ -33,7 +33,7 @@ static bool TryFindStageNode(
         }
 
         uintptr_t next = 0;
-        if (!ReadPtr(node + 8, &next) || next == node)
+        if (!ReadNonNullPointer(node + 8, &next) || next == node)
             return false;
         node = next;
     }
@@ -48,7 +48,7 @@ static bool TryResolveAll(
     *subsystem = 0;
 
     uintptr_t manager = 0;
-    if (!ReadPtr(moduleBase + kManagerRva, &manager))
+    if (!ReadNonNullPointer(moduleBase + kManagerRva, &manager))
         return false;
 
     Stage physics = {
@@ -63,17 +63,17 @@ static bool TryResolveAll(
     uintptr_t vtable = 0;
     uintptr_t wrapper = 0;
 
-    if (!ReadPtr(physics.node + 0x20, &timingObject) ||
+    if (!ReadNonNullPointer(physics.node + 0x20, &timingObject) ||
         physics.node != timingObject + 0x268 ||
-        !ReadPtr(timingObject + 0x268, &vtable) ||
+        !ReadNonNullPointer(timingObject + 0x268, &vtable) ||
         vtable != moduleBase + PhysicsLayoutVtableRva ||
-        !ReadPtr(timingObject + 0x58, &wrapper) ||
-        !ReadPtr(wrapper + 0x140, subsystem))
+        !ReadNonNullPointer(timingObject + 0x58, &wrapper) ||
+        !ReadNonNullPointer(wrapper + 0x140, subsystem))
         return false;
 
     uintptr_t physicsStep = timingObject + 0x260;
     uintptr_t stepVtable = 0;
-    if (!ReadPtr(physicsStep + 8, &stepVtable) ||
+    if (!ReadNonNullPointer(physicsStep + 8, &stepVtable) ||
         stepVtable != moduleBase + PhysicsLayoutVtableRva)
         return false;
 

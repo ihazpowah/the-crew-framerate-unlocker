@@ -1,9 +1,12 @@
 // Analytic rotation/scale cases exercise the shared matrix interpolation kernel,
 // independently of finalized-cohort admission or the shadow presentation clock.
 #include <cassert>
-#include "../source/FramerateUnlocker/TheCrew.FramerateUnlocker.cpp"
-#include "LegacyVehicleAdmission.h"
-#include "MatrixInterpolationReference.h"
+#include "FramerateUnlockerHarness.h"
+#include "reference/LegacyD3DLightFixtures.h"
+#include "reference/LegacyGpuSceneFixtures.h"
+#include "reference/LegacyVehicleAdmission.h"
+#include "reference/MatrixInterpolationReference.h"
+#include "native/presentation/AffineBasisCacheTests.h"
 
 static void Pose(float* out, double angle, double scale, bool mirrored)
 {
@@ -31,6 +34,7 @@ static void ScaledRotation(float* out, int axis, double degrees, double scale, b
 
 int main()
 {
+    CheckAffineBasisCache();
     using namespace IntegratedController;
     unsigned cases = 0;
     for (bool mirrored : {false, true})
@@ -45,17 +49,17 @@ int main()
                         Pose(expected, start + delta * alpha, scale + 0.25 * alpha, mirrored);
                         a[12] = 10000; a[3] = 0.123f;
                         b[12] = 10000; b[3] = 0.234f;
-                        SceneMtxInterpolate(output, a, b, alpha);
+                        InterpolateWorldMatrix(output, a, b, alpha);
                         for (int row = 0; row < 3; ++row)
                             for (int col = 0; col < 3; ++col)
                                 assert(std::fabs(output[row * 4 + col] - expected[row * 4 + col]) < 3e-5);
-                        assert(std::fabs(MatrixPosition(output, 0) -
-                            (MatrixPosition(a, 0) + alpha * (MatrixPosition(b, 0) - MatrixPosition(a, 0)))) < 1e-7);
+                        assert(std::fabs(WorldMatrixPosition(output, 0) -
+                            (WorldMatrixPosition(a, 0) + alpha * (WorldMatrixPosition(b, 0) - WorldMatrixPosition(a, 0)))) < 1e-7);
                         ++cases;
                     }
     float a[16], b[16], output[16];
     Pose(a, 0, 1, true); Pose(b, 0.5, 1, false);
-    SceneMtxInterpolate(output, a, b, 0.5);
+    InterpolateWorldMatrix(output, a, b, 0.5);
     for (int row = 0; row < 3; ++row)
         for (int col = 0; col < 3; ++col) assert(output[row * 4 + col] == b[row * 4 + col]);
     // Positive symmetric stretch has no rotation: its off-diagonal shear
@@ -63,44 +67,44 @@ int main()
     Pose(a, 0, 1, false); a[1] = a[4] = 0.5f;
     Pose(b, 0, 1, false);
     int mode = 0;
-    SceneMtxInterpolate(output, a, b, 0.5, &mode);
+    InterpolateWorldMatrix(output, a, b, 0.5, &mode);
     assert(mode == 7);
     assert(std::fabs(output[1]-0.25f) < 1e-6 && std::fabs(output[4]-0.25f) < 1e-6);
     assert(std::fabs(output[0]-1) < 1e-6 && std::fabs(output[5]-1) < 1e-6);
     // Degenerate bases still retain the native current basis safely.
     a[0] = a[1] = 0;
-    SceneMtxInterpolate(output, a, b, 0.5, &mode);
+    InterpolateWorldMatrix(output, a, b, 0.5, &mode);
     assert(mode == 2);
     for (int row = 0; row < 3; ++row)
         for (int col = 0; col < 3; ++col) assert(output[row * 4 + col] == b[row * 4 + col]);
 
     // Admission corrects each provisional component once and preserves publication.
-    SceneMatrixEntry entry = {};
+    LegacySceneMatrixEntry entry = {};
     Pose(a, 0, 1, false);
     PrepareSceneEndpoint(entry, a, 99, 100, 100.0 / 60);
     a[12] = 1;
     PrepareSceneEndpoint(entry, a, 100, 101, 101.0 / 60);
     PrepareSceneEndpoint(entry, a, 101, 102, 102.0 / 60);
-    entry.presentedFrameGeneration = 7;
-    memcpy(entry.presentedFrameOutput, a, 64);
+    entry.presentedGeneration = 7;
+    memcpy(entry.presentedMatrix, a, 64);
     a[12] = 2;
     assert(CorrectProvisionalSceneComponents(entry, a, 102) & 1);
-    assert(entry.curr[12] == 2 && entry.presentedFrameOutput[12] == 1);
+    assert(entry.curr[12] == 2 && entry.presentedMatrix[12] == 1);
     a[12] = 3;
     assert(!(CorrectProvisionalSceneComponents(entry, a, 102) & 1));
 
     // Exact metadata supplies the live timestamp-to-alpha calculation.
-    PublishExactFrameMeta(500, 100, 101, 1.0, 1.0 + 1.0 / 60, 1.0 + 0.5 / 60);
+    PublishFrameClock(500, 100, 101, 1.0, 1.0 + 1.0 / 60, 1.0 + 0.5 / 60);
     LONG64 previousTick, currentTick;
-    double alpha, step;
+    double alpha, stepSeconds;
     PhysicsInterpolationInterval interval = {};
-    assert(ReadExactFrameMeta(500, &previousTick, &currentTick, &alpha, &step,
-        &interval.evaluationTime, &interval.startTime, &interval.endTime));
+    assert(ReadFrameClock(500, &previousTick, &currentTick, &alpha, &stepSeconds,
+        &interval.evaluationTimeSeconds, &interval.intervalStartSeconds, &interval.intervalEndSeconds));
     Pose(a, 0, 1, false); Pose(b, 0, 1, false); b[12] = 1;
     assert(previousTick == 100 && currentTick == 101);
     assert(std::fabs(alpha - 0.5) < 1e-12);
-    SceneMtxInterpolate(output, a, b, alpha);
-    assert(std::fabs(MatrixPosition(output, 0) - 0.5) < 1e-6);
+    InterpolateWorldMatrix(output, a, b, alpha);
+    assert(std::fabs(WorldMatrixPosition(output, 0) - 0.5) < 1e-6);
     // Cached production math versus the frozen scalar kernel, including cache
     // invalidation, split translation, reflections, shear and extrapolation.
     for (int axis = 0; axis < 3; ++axis)
@@ -108,7 +112,7 @@ int main()
             for (double scale : {0.5, 1.0, 2.0})
                 for (bool reflected : {false, true})
                 {
-                    SceneInterpolationCache pair;
+                    RigidBasisInterpolationCache pair;
                     float oldResult[16], actual[16];
                     ScaledRotation(a, axis, degrees, scale, reflected);
                     ScaledRotation(b, axis, degrees+35, scale+0.125, reflected);
@@ -117,22 +121,22 @@ int main()
                     {
                         int oldMode, newMode;
                         ReferenceSceneMtxInterpolate(oldResult,a,b,t,&oldMode);
-                        SceneMtxInterpolate(actual,a,b,t,&newMode,0,&pair);
+                        InterpolateWorldMatrix(actual,a,b,t,&newMode,0,&pair);
                         assert(oldMode==newMode);
                         for (int c=0;c<16;++c) assert(std::fabs(oldResult[c]-actual[c])<3e-6);
                     }
                     // Change translation without changing the cached basis.
                     b[3]=1.25f;
                     ReferenceSceneMtxInterpolate(oldResult,a,b,0.5);
-                    SceneMtxInterpolate(actual,a,b,0.5,nullptr,0,&pair);
+                    InterpolateWorldMatrix(actual,a,b,0.5,nullptr,0,&pair);
                     for (int c=0;c<16;++c) assert(std::fabs(oldResult[c]-actual[c])<3e-6);
                     // Reuse a cache for an in-place corrected basis.
                     b[0]+=0.14f;
-                    for (unsigned family : {0u, kVehicleLocalShearFamily})
+                    for (unsigned family : {RigidBasis, AffineBasis})
                     {
                         int oldMode,newMode;
                         ReferenceSceneMtxInterpolate(oldResult,a,b,0.5,&oldMode,family);
-                        SceneMtxInterpolate(actual,a,b,0.5,&newMode,family,&pair);
+                        InterpolateWorldMatrix(actual,a,b,0.5,&newMode,family,&pair);
                         assert(oldMode==newMode);
                         for (int c=0;c<16;++c) assert(std::fabs(oldResult[c]-actual[c])<3e-6);
                     }
@@ -141,12 +145,12 @@ int main()
     for (float length : {0.0f,0.8499f,0.85f,0.8501f,1.1499f,1.15f,1.1501f,2.0f})
     {
         ScaledRotation(a,0,0,1,false); a[0]=length;
-        for (bool gpu : {false,true}) assert(TransformLooksValid(a,gpu)==ReferenceTransformLooksValid(a,gpu));
+        for (bool gpu : {false,true}) assert(RigidTransformLooksValid(a,gpu)==ReferenceTransformLooksValid(a,gpu));
     }
     for (int c=0;c<16;++c)
     {
         ScaledRotation(a,0,0,1,false); a[c]=std::numeric_limits<float>::quiet_NaN();
-        for (bool gpu : {false,true}) assert(TransformLooksValid(a,gpu)==ReferenceTransformLooksValid(a,gpu));
+        for (bool gpu : {false,true}) assert(RigidTransformLooksValid(a,gpu)==ReferenceTransformLooksValid(a,gpu));
     }
     TransformValidationCache validationCache;
     ScaledRotation(a,0,0,1,false);
@@ -170,9 +174,9 @@ int main()
             std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity(), saved})
         {
             a[lane] = value;
-            assert(GpuTransformLooksValid(a) == TransformLooksValid(a, true));
-            assert(CachedTransformLooksValid(validationCache, a, true) == TransformLooksValid(a, true));
-            assert(GpuTransformLooksValid(a) == TransformLooksValid(a, true));
+            assert(SplitTransformLooksValid(a) == RigidTransformLooksValid(a, true));
+            assert(CachedTransformLooksValid(validationCache, a, true) == RigidTransformLooksValid(a, true));
+            assert(SplitTransformLooksValid(a) == RigidTransformLooksValid(a, true));
         }
     }
     for (int i = 0; i < 1024; ++i)
@@ -180,10 +184,10 @@ int main()
         ScaledRotation(a, i % 7, i % 3, 1, false);
         a[12] = float(i * 23); a[3] = float(i) * .001f;
         a[7] = -0.0f; a[15] = std::numeric_limits<float>::quiet_NaN();
-        assert(GpuTransformLooksValid(a) == TransformLooksValid(a, true));
+        assert(SplitTransformLooksValid(a) == RigidTransformLooksValid(a, true));
         a[12] += 300; a[3] = -a[3];
-        assert(GpuTransformLooksValid(a) == TransformLooksValid(a, true));
-        assert(CachedTransformLooksValid(validationCache, a, true) == TransformLooksValid(a, true));
+        assert(SplitTransformLooksValid(a) == RigidTransformLooksValid(a, true));
+        assert(CachedTransformLooksValid(validationCache, a, true) == RigidTransformLooksValid(a, true));
     }
 
     std::vector<unsigned char> entity(0xa90+64);
@@ -197,5 +201,5 @@ int main()
     a[0]=0; memcpy(entity.data()+0xa90,a,64);
     assert(!ReadPlayerRootAtUpload(&root));
     root.entity=1; assert(!ReadPlayerRootAtUpload(&root)); // SEH guard remains intact.
-    printf("PASS %u analytic GPU matrix cases, endpoint/timestamp guards and cached interpolation\n", cases);
+    printf("PASS %u analytic native matrix cases, endpoint/timestamp guards and cached interpolation\n", cases);
 }

@@ -19,6 +19,8 @@ static constexpr size_t CodePageSize = 0x1000;
 static constexpr uintptr_t DataPageOffset = 0x1000;
 static constexpr uintptr_t CameraPacketStubOffset = 0x300;
 static constexpr uintptr_t PhysicsStubOffset = 0x500;
+static constexpr uintptr_t CpuTransformSourceStubOffset = 0x800;
+static constexpr uintptr_t CpuPaletteSourceStubOffset = 0xa00;
 
 // Keep the generated-stub data ABI offsets fixed; retired camera samples and
 // output slots leave reserved holes rather than shifting the live clock fields.
@@ -26,9 +28,7 @@ static constexpr uintptr_t DataPhysicsTickCounterOffset = 0x168;
 static constexpr uintptr_t DataPhysicsActiveOffset = 0x170;
 static constexpr uintptr_t DataCapturedPhysicsTickOffset = 0x180;
 static constexpr uintptr_t DataPublishedGenerationOffset = 0x290;
-static constexpr uintptr_t DataLatchedGenerationOffset = 0x298;
 static constexpr uintptr_t DataFrameGenerationOffset = 0x2A0;
-static constexpr uintptr_t DataRenderActiveOffset = 0x2B0;
 static constexpr uintptr_t DataPhysicsSubsystemOffset = 0x2E0;
 
 struct Stage
@@ -38,12 +38,12 @@ struct Stage
     uintptr_t node;
 };
 
-static uintptr_t g_base = 0;
+static uintptr_t g_gameModuleBase = 0;
 static uintptr_t g_manager = 0;
 static std::atomic<uintptr_t> g_subsystem{0};
 
 static uintptr_t g_allocation = 0;
-static uintptr_t g_data = 0;
+static uintptr_t g_callbackData = 0;
 static uintptr_t g_renderStub = 0;
 static uintptr_t g_physicsStub = 0;
 static uintptr_t g_cameraPacketStub = 0;
@@ -53,7 +53,7 @@ static std::atomic<bool> g_cameraPacketInstalled{false};
 static uintptr_t g_renderNode = 0;
 static uintptr_t g_physicsNode = 0;
 static std::atomic<int> g_targetFps{75};
-// Keep the menu/DAT selection separate from the interval used with VSync.
+// Keep the VSync refresh ceiling for interpolation separate from the software cap.
 static std::atomic<int> g_vsyncRefreshCeiling{0};
 static std::atomic<int> g_nativeMenuFps{0};
 } // namespace IntegratedController

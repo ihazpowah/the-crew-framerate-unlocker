@@ -53,10 +53,10 @@ static bool Install()
     const uint8_t source[]={0x8b,0x81,0xf0,0x07,0x00,0x00,0x89,0x47,0x6c};
     const uint8_t atlas[]={0x8b,0x86,0x40,0x12,0x00,0x00,0x8d,0x04,0x40,
         0x89,0x86,0x40,0x12,0x00,0x00};
-    if (!NativeHookChain::Matches(g_base+kBuilderRva,expected,sizeof(expected)) ||
-        !NativeHookChain::Matches(g_base+0x16d801d,source,sizeof(source)) ||
-        !NativeHookChain::Matches(g_base+0x16daafd,atlas,sizeof(atlas))) return false;
-    void* target=reinterpret_cast<void*>(g_base+kBuilderRva);
+    if (!NativeHookChain::Matches(g_gameModuleBase+kBuilderRva,expected,sizeof(expected)) ||
+        !NativeHookChain::Matches(g_gameModuleBase+0x16d801d,source,sizeof(source)) ||
+        !NativeHookChain::Matches(g_gameModuleBase+0x16daafd,atlas,sizeof(atlas))) return false;
+    void* target=reinterpret_cast<void*>(g_gameModuleBase+kBuilderRva);
     if (NativeHookChain::Create(target,reinterpret_cast<void*>(Hook),reinterpret_cast<void**>(&original)) != MH_OK)
         return false;
     if (MH_EnableHook(target) != MH_OK) { MH_RemoveHook(target); return false; }

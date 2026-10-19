@@ -45,13 +45,13 @@ static bool InstallControllerHooks(
         0x48, 0x8d, 0x0d, 0x83, 0x9a, 0x30, 0x02
     };
 
-    g_allocation = AllocateNear(g_base);
+    g_allocation = AllocateNear(g_gameModuleBase);
     if (!g_allocation)
     {
         return false;
     }
 
-    g_data = g_allocation + DataPageOffset;
+    g_callbackData = g_allocation + DataPageOffset;
     g_renderStub = g_allocation;
     g_cameraPacketStub =
         g_allocation + CameraPacketStubOffset;
@@ -60,23 +60,26 @@ static bool InstallControllerHooks(
 
     const std::vector<uint8_t> renderCode =
         BuildRenderCallbackStub(
-            g_renderStub, g_data,
-            g_base + RenderCallbackRva,
+            g_renderStub, g_callbackData,
+            g_gameModuleBase + RenderCallbackRva,
             reinterpret_cast<uintptr_t>(
                 &PublishRenderFrameState));
     const std::vector<uint8_t> cameraPacketCode =
         BuildCameraPacketStub(
-            g_cameraPacketStub, g_data, g_base);
+            g_cameraPacketStub, g_gameModuleBase);
     const std::vector<uint8_t> physicsCode =
         BuildPhysicsTickStub(
-            g_physicsStub, g_data,
-            g_base + PhysicsCallbackRva);
+            g_physicsStub, g_callbackData,
+            g_gameModuleBase + PhysicsCallbackRva);
+    const auto cpuSourceCode = BuildCpuTransformSourceStub(g_allocation + CpuTransformSourceStubOffset, g_gameModuleBase);
+    const auto cpuPaletteCode = BuildCpuPaletteSourceStub(g_allocation + CpuPaletteSourceStubOffset, g_gameModuleBase);
 
     if (renderCode.size() > CameraPacketStubOffset ||
         cameraPacketCode.size() >
             PhysicsStubOffset-CameraPacketStubOffset ||
-        physicsCode.size() >
-            CodePageSize-PhysicsStubOffset)
+        physicsCode.size() > CpuTransformSourceStubOffset-PhysicsStubOffset ||
+        cpuSourceCode.size() > CpuPaletteSourceStubOffset-CpuTransformSourceStubOffset ||
+        cpuPaletteCode.size() > CodePageSize-CpuPaletteSourceStubOffset)
     {
         return false;
     }
@@ -89,34 +92,33 @@ static bool InstallControllerHooks(
             cameraPacketCode.data(), cameraPacketCode.size()) ||
         !SafeCopyTo(
             g_physicsStub,
-            physicsCode.data(), physicsCode.size()))
+            physicsCode.data(), physicsCode.size()) ||
+        !SafeCopyTo(g_allocation + CpuTransformSourceStubOffset, cpuSourceCode.data(), cpuSourceCode.size()) ||
+        !SafeCopyTo(g_allocation + CpuPaletteSourceStubOffset, cpuPaletteCode.data(), cpuPaletteCode.size()))
     {
         return false;
     }
 
     WriteI64(
-        g_data + DataPhysicsTickCounterOffset, 0);
+        g_callbackData + DataPhysicsTickCounterOffset, 0);
     WriteI64(
-        g_data + DataPhysicsActiveOffset, 0);
-    WriteI64(g_data + DataRenderActiveOffset, 0);
+        g_callbackData + DataPhysicsActiveOffset, 0);
     WritePtr(
-        g_data + DataPhysicsSubsystemOffset,
+        g_callbackData + DataPhysicsSubsystemOffset,
         g_subsystem);
     WriteI64(
-        g_data + DataCapturedPhysicsTickOffset, 0);
+        g_callbackData + DataCapturedPhysicsTickOffset, 0);
 
     WriteI64(
-        g_data + DataPublishedGenerationOffset, 0);
+        g_callbackData + DataPublishedGenerationOffset, 0);
     WriteI64(
-        g_data + DataLatchedGenerationOffset, -1);
-    WriteI64(
-        g_data + DataFrameGenerationOffset, -1);
+        g_callbackData + DataFrameGenerationOffset, -1);
 
     if (!FinalizeCallbackCode(g_allocation, protect, flush))
     {
         // No hook has been published yet; these pages have no live consumers.
         VirtualFree(reinterpret_cast<void*>(g_allocation), 0, MEM_RELEASE);
-        g_allocation = g_data = g_renderStub = g_cameraPacketStub = g_physicsStub = 0;
+        g_allocation = g_callbackData = g_renderStub = g_cameraPacketStub = g_physicsStub = 0;
         return false;
     }
 
@@ -128,9 +130,9 @@ static bool InstallControllerHooks(
     };
 
     if (!TryFindStageNode(
-            g_base, g_manager, &render, 0) ||
+            g_gameModuleBase, g_manager, &render, 0) ||
         !TryFindStageNode(
-            g_base, g_manager, &physics, 0))
+            g_gameModuleBase, g_manager, &physics, 0))
     {
         return false;
     }
@@ -140,28 +142,28 @@ static bool InstallControllerHooks(
 
     uintptr_t currentPhysicsCallback = 0;
     uintptr_t currentRenderCallback = 0;
-    if (!ReadPtr(
+    if (!ReadNonNullPointer(
             g_physicsNode + 0x28,
             &currentPhysicsCallback) ||
         currentPhysicsCallback !=
-            g_base + PhysicsCallbackRva ||
-        !ReadPtr(
+            g_gameModuleBase + PhysicsCallbackRva ||
+        !ReadNonNullPointer(
             g_renderNode + 0x28,
             &currentRenderCallback) ||
         currentRenderCallback !=
-            g_base + RenderCallbackRva)
+            g_gameModuleBase + RenderCallbackRva)
     {
         return false;
     }
 
-    const uintptr_t cameraPacketPatch = g_base + CameraPacketPatchRva;
+    const uintptr_t cameraPacketPatch = g_gameModuleBase + CameraPacketPatchRva;
     {
         static const uint8_t nativeSourceCopy[] = {
             0x0f, 0x28, 0x07, 0x48, 0x8b, 0xd8, 0x0f, 0x29, 0x40, 0x10
         }; // movaps xmm0,[rdi]; mov rbx,rax; movaps [rax+0x10],xmm0
         uint8_t contextCode[sizeof(nativeSourceCopy)] = {};
         uint8_t current[sizeof(originalCameraPacketCode)] = {};
-        if (!SafeCopyFrom(g_base + 0x3d0530, contextCode, sizeof(contextCode)) ||
+        if (!SafeCopyFrom(g_gameModuleBase + 0x3d0530, contextCode, sizeof(contextCode)) ||
             memcmp(contextCode, nativeSourceCopy, sizeof(contextCode)) != 0 ||
             !SafeCopyFrom(cameraPacketPatch, current, sizeof(current)) ||
             memcmp(current, originalCameraPacketCode, sizeof(current)) != 0)
@@ -182,13 +184,13 @@ static bool InstallControllerHooks(
     }
 
     const bool physicsInstalled = ReplaceCallback(g_physicsNode + 0x28,
-        g_base + PhysicsCallbackRva, g_physicsStub);
+        g_gameModuleBase + PhysicsCallbackRva, g_physicsStub);
     const bool renderInstalled = physicsInstalled && ReplaceCallback(g_renderNode + 0x28,
-        g_base + RenderCallbackRva, g_renderStub);
+        g_gameModuleBase + RenderCallbackRva, g_renderStub);
     if (!renderInstalled)
     {
         if (physicsInstalled)
-            ReplaceCallback(g_physicsNode + 0x28, g_physicsStub, g_base + PhysicsCallbackRva);
+            ReplaceCallback(g_physicsNode + 0x28, g_physicsStub, g_gameModuleBase + PhysicsCallbackRva);
         if (g_cameraPacketInstalled)
         {
             MH_DisableHook(reinterpret_cast<void*>(cameraPacketPatch));
@@ -198,29 +200,29 @@ static bool InstallControllerHooks(
         return false;
     }
 
-    g_frameGenerationAddress.store(
-        g_data + DataFrameGenerationOffset, std::memory_order_release);
+    g_frameClockGenerationAddress.store(
+        g_callbackData + DataFrameGenerationOffset, std::memory_order_release);
     g_controllerInstalled = true;
     return true;
 }
 
 static bool ResolveInitialState()
 {
-    g_base =
+    g_gameModuleBase =
         reinterpret_cast<uintptr_t>(
             GetModuleHandleW(nullptr));
-    if (!g_base || !ValidateMainModule(g_base))
+    if (!g_gameModuleBase || !ValidateMainModule(g_gameModuleBase))
     {
         return false;
     }
 
-    if (!ReadPtr(
-            g_base + kManagerRva, &g_manager))
+    if (!ReadNonNullPointer(
+            g_gameModuleBase + kManagerRva, &g_manager))
         return false;
 
     uintptr_t subsystem = 0;
     if (!TryResolveAll(
-            g_base, 0, &subsystem))
+            g_gameModuleBase, 0, &subsystem))
         return false;
 
     g_subsystem = subsystem;

@@ -2,28 +2,47 @@
 #include <cassert>
 #define TheCrewFramerateUnlocker_STALE_CLOCK_TESTS
 static void StaleClockTestBeforeLock(unsigned path);
-#include "../source/FramerateUnlocker/TheCrew.FramerateUnlocker.cpp"
+#define THECREW_PAGE_VALIDATION_TESTS
+#include "FramerateUnlockerHarness.h"
+#include "reference/LegacyLightCorrection.h"
+#include "reference/LegacyNativeSerializers.h"
+#include "reference/LegacyCpuLightConsumption.h"
+#include "reference/LegacyD3DLightFixtures.h"
+#include "reference/LegacyGpuSceneFixtures.h"
+#include "reference/SceneHistoryTestHelpers.h"
 
 using namespace IntegratedController;
-#include "FramerateMenuTests.h"
-#include "MenuSettingsTests.h"
-#include "NativeHookChainTests.h"
-#include "NativeLightPresentationTests.h"
-#include "StaleLightJobTests.h"
-#include "StaleClockPathTests.h"
-#include "AmbientProjectorPresentationTests.h"
-#include "PointLightPresentationTests.h"
-#include "SameFrameLightUploadsTests.h"
-#include "LightGenerationBoundaryTests.h"
-#include "CallbackPublicationTests.h"
-#include "MinHookMemoryTests.h"
-#include "MinHookPatchTests.h"
-#include "ReusablePoolTests.h"
-#include "LightProviderIndexTests.h"
-#include "LightPayloadIndexTests.h"
-#include "NativeLightHistoryLookupTests.h"
-#include "NativeUploadRoutingTests.h"
-#include "CameraRotationTests.h"
+#include "native/plugins/FramerateMenuTests.h"
+#include "native/plugins/StartupFeatureTests.h"
+#include "native/plugins/MenuSettingsTests.h"
+#include "native/hooks/NativeHookChainTests.h"
+#include "native/presentation/LightSourceInterpolationTests.h"
+#include "native/hooks/StaleLightJobTests.h"
+#include "native/hooks/StaleClockPathTests.h"
+#include "native/presentation/AmbientProjectorPresentationTests.h"
+#include "native/presentation/PointLightPresentationTests.h"
+#include "native/presentation/SameFrameLightUploadsTests.h"
+#include "native/presentation/LightGenerationBoundaryTests.h"
+#include "native/hooks/CallbackPublicationTests.h"
+#include "native/hooks/MinHookMemoryTests.h"
+#include "native/hooks/MinHookPatchTests.h"
+#include "native/presentation/ReusablePoolTests.h"
+#include "native/presentation/LightProviderIndexTests.h"
+#include "native/presentation/LightConsumptionScalingTests.h"
+#include "native/presentation/ScalingPathTests.h"
+#include "native/cpu/CpuPageValidationTests.h"
+#include "native/presentation/LightPayloadIndexTests.h"
+#include "native/presentation/LightSourceHistoryLookupTests.h"
+#include "reference/LegacyUploadRoutingTests.h"
+#include "native/cpu/PlayerTagPresentationTests.h"
+#include "native/cpu/CpuInterpolationTests.h"
+#include "native/cpu/CpuAdmissionTests.h"
+#include "native/cpu/CpuHistoryPruningTests.h"
+#include "native/presentation/EffectPopulationTests.h"
+#include "native/cpu/CpuPresentationCohortTests.h"
+#include "native/cpu/CpuLightAlignmentTests.h"
+#include "native/cpu/CpuLightConsumptionTests.h"
+#include "native/cpu/CpuLightCameraBasisTests.h"
 
 static unsigned nestedSubmissionCalls = 0;
 static uintptr_t __fastcall NestedNativeSubmission(uintptr_t stage, uintptr_t packet, unsigned flags, float sortValue)
@@ -36,19 +55,19 @@ static uintptr_t __fastcall NestedNativeSubmission(uintptr_t stage, uintptr_t pa
 static void CheckNestedLightSubmission()
 {
     const auto saved = LightSubmissionHook::original;
-    const bool active = g_active.exchange(false);
+    const bool active = g_presentationActive.exchange(false);
     LightSubmissionHook::original = NestedNativeSubmission;
     nestedSubmissionCalls = 0;
     assert(LightSubmissionHook::Hook(0x1234, 0x5678, 1, 0.5f) == 101);
     assert(nestedSubmissionCalls == 2);
     LightSubmissionHook::original = saved;
-    g_active.store(active);
+    g_presentationActive.store(active);
 }
 
 struct Probe
 {
     uint32_t xmm[4][4];
-    uintptr_t rdx, r8, r9, stackAlignment, renderActive;
+    uintptr_t rdx, r8, r9, stackAlignment;
 };
 
 static void CopyCode(uintptr_t address, const std::vector<uint8_t>& bytes)
@@ -73,14 +92,14 @@ static uintptr_t __fastcall RaiseNativeLight(uintptr_t, uintptr_t, uintptr_t, ui
 { RaiseException(0xe0421241, 0, 0, nullptr); return 0; }
 static bool LightExceptionEscapes()
 {
-    __try { LightBuilderHook::Hook(0,0,0,0,0,0,0,0,0); }
+    __try { LightSourceBuilderHook::Hook(0,0,0,0,0,0,0,0,0); }
     __except (GetExceptionCode() == 0xe0421241 ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH)
     { return true; }
     return false;
 }
 static void CheckLightBuilderHook()
 {
-    namespace trace = LightBuilderHook;
+    namespace trace = LightSourceBuilderHook;
     alignas(16) uint8_t output[0xd20]{}, source[64]{};
     alignas(16) float position[4] = {1,2,3,4}, direction[4] = {5,6,7,8};
     alignas(16) float auxiliary[4] = {9,10,11,12}, origin[8] = {13,14,15,16,17,18,19,20};
@@ -94,7 +113,7 @@ static void CheckLightBuilderHook()
         reinterpret_cast<uintptr_t>(direction), reinterpret_cast<uintptr_t>(auxiliary),
         reinterpret_cast<uintptr_t>(&kind), sourceAddress};
     memcpy(lightArguments, arguments, sizeof(arguments));
-    const uintptr_t savedClock = g_frameGenerationAddress.exchange(0);
+    const uintptr_t savedClock = g_frameClockGenerationAddress.exchange(0);
     // Relocate the exact verified native entry, then tail-call the ABI probe.
     const uint8_t stub[] = {0x4c,0x89,0x4c,0x24,0x20,0x55,0x56,0x41,0x54,0x41,0x57,
         0x41,0x5f,0x41,0x5c,0x5e,0x5d,0x48,0xb8,0,0,0,0,0,0,0,0,0xff,0xe0};
@@ -121,7 +140,7 @@ static void CheckLightBuilderHook()
     assert(MH_Uninitialize() == MH_OK);
     VirtualFree(code, 0, MEM_RELEASE);
     trace::original = nullptr;
-    g_frameGenerationAddress.store(savedClock);
+    g_frameClockGenerationAddress.store(savedClock);
 }
 static unsigned unmaps = 0;
 static HRESULT STDMETHODCALLTYPE NativeMap(ID3D11DeviceContext*, ID3D11Resource*, UINT,
@@ -164,37 +183,37 @@ static void CheckMappingNodeReuse()
     assert(ForgetMappedBuffer(key));
     for (size_t i=0;i<g_idleMappingNodeCount;++i)
         assert(g_idleMappingNodes[i].mapped().data==nullptr && g_idleMappingNodes[i].key().resource==nullptr);
-    ResetTracking();
+    ResetLegacySceneFixtures();
     assert(g_mapped.empty() && g_idleMappingNodeCount==0);
 }
 static void CheckMappingLifetime()
 {
     g_originalMap = NativeMap;
     g_originalUnmap = NativeUnmap;
-    g_active.store(true);
+    g_presentationActive.store(true);
     const MappedKey key = { nullptr, nullptr };
     // Represents a Map that completed after the pipeline's reset. A poisoned
     // address must never survive its Unmap and be used after reactivation.
     g_mapped[key] = { reinterpret_cast<void*>(1), 64 };
-    g_pipelineOverrideEnabled.store(false);
+    g_highFpsPresentationEnabled.store(false);
     HookUnmap(nullptr, nullptr, 0);
     assert(g_mapped.empty() && unmaps == 1);
-    g_pipelineOverrideEnabled.store(true);
+    g_highFpsPresentationEnabled.store(true);
     HookUnmap(nullptr, nullptr, 0);
     assert(unmaps == 2);
 
     D3D11_MAPPED_SUBRESOURCE mapped = {};
     g_mapped[key] = { reinterpret_cast<void*>(1), 64 };
-    g_pipelineOverrideEnabled.store(false);
+    g_highFpsPresentationEnabled.store(false);
     assert(SUCCEEDED(HookMap(nullptr, nullptr, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)));
     assert(g_mapped.empty() && mapped.pData == mappedData);
     g_mapped[key] = { reinterpret_cast<void*>(1), 64 };
-    g_pipelineOverrideEnabled.store(true);
+    g_highFpsPresentationEnabled.store(true);
     assert(SUCCEEDED(HookMap(nullptr, nullptr, 0, D3D11_MAP_READ, 0, &mapped)));
     assert(g_mapped.empty()); // Read-only maps must not be patched.
     HookUnmap(nullptr, nullptr, 0);
     assert(unmaps == 3);
-    g_active.store(false);
+    g_presentationActive.store(false);
 }
 
 static const void* expectedUploadSource = nullptr;
@@ -218,20 +237,19 @@ static void CheckUploadLayoutAdmission()
         nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr)));
     const auto savedMap = g_originalMap;
     const auto savedUpdate = g_originalUpdateSubresource;
-    const bool savedActive = g_active.exchange(true);
-    const bool savedPipeline = g_pipelineOverrideEnabled.exchange(true);
+    const bool savedActive = g_presentationActive.exchange(true);
+    const bool savedPipeline = g_highFpsPresentationEnabled.exchange(true);
     const bool savedAmbient = AmbientProjectorPresentation::enabled;
-    const uintptr_t savedClock = g_frameGenerationAddress.exchange(0);
+    const uintptr_t savedClock = g_frameClockGenerationAddress.exchange(0);
     AmbientProjectorPresentation::enabled = true;
     g_originalMap = NativeMap;
     g_originalUpdateSubresource = UploadForwardingProbe;
-    ResetTracking();
+    ResetLegacySceneFixtures();
     unsigned char source[4096]{};
     for (UINT i = 0; i < sizeof(source); ++i) source[i] = static_cast<unsigned char>(i);
     for (UINT size : {32u,48u,64u,80u,96u,128u,192u,208u,256u,272u,288u,624u,4096u})
     {
-        const bool supported = size == 64 || size == 80 || size == 128 ||
-            size == 208 || size == 256 || size == 272 || size == 624;
+        const bool supported = size == 624;
         D3D11_BUFFER_DESC desc{};
         desc.ByteWidth = size; desc.Usage = D3D11_USAGE_DYNAMIC;
         desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER; desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -264,13 +282,13 @@ static void CheckUploadLayoutAdmission()
         }
         buffer->Release();
     }
-    ResetTracking();
+    ResetLegacySceneFixtures();
     expectedUploadSource = nullptr;
     g_originalMap = savedMap;
     g_originalUpdateSubresource = savedUpdate;
-    g_frameGenerationAddress.store(savedClock);
-    g_active.store(savedActive);
-    g_pipelineOverrideEnabled.store(savedPipeline);
+    g_frameClockGenerationAddress.store(savedClock);
+    g_presentationActive.store(savedActive);
+    g_highFpsPresentationEnabled.store(savedPipeline);
     AmbientProjectorPresentation::enabled = savedAmbient;
     device->Release();
 }
@@ -339,8 +357,8 @@ static void CheckNetworkWorkerLookupFix()
     uintptr_t entries[57] = {};
     uint8_t selectors[57] = {};
     uintptr_t managerAddress = reinterpret_cast<uintptr_t>(manager.data());
-    g_base = reinterpret_cast<uintptr_t>(&managerAddress) - kManagerRva;
-    const uintptr_t caller = g_base + 0x2de3d9;
+    g_gameModuleBase = reinterpret_cast<uintptr_t>(&managerAddress) - kManagerRva;
+    const uintptr_t caller = g_gameModuleBase + 0x2de3d9;
     WritePtr(managerAddress + 0x1f08, reinterpret_cast<uintptr_t>(entries));
     WritePtr(managerAddress + 0x1f18, reinterpret_cast<uintptr_t>(selectors));
     *reinterpret_cast<uint32_t*>(manager.data() + 0x1f10) = 57;
@@ -349,13 +367,13 @@ static void CheckNetworkWorkerLookupFix()
     const uintptr_t wrong = reinterpret_cast<uintptr_t>(police.data());
     for (uintptr_t object : {good, second})
     {
-        WritePtr(object, g_base + 0x20162b8);
+        WritePtr(object, g_gameModuleBase + 0x20162b8);
         WritePtr(object + 0x10, managerAddress);
         memcpy(reinterpret_cast<void*>(object + 0x18), "SvcNetwork", 11);
         WritePtr(object + 0x21a0, object + 0x21a8);
         InitializeCriticalSection(reinterpret_cast<CRITICAL_SECTION*>(object + 0x21a8));
     }
-    WritePtr(wrong, g_base + 0x20124a8);
+    WritePtr(wrong, g_gameModuleBase + 0x20124a8);
     WritePtr(wrong + 0x10, managerAddress);
     memcpy(police.data() + 0x18, "SvcPlayerPoliceChase", 20);
     selectors[2] = 50;
@@ -404,9 +422,9 @@ static void CheckNetworkWorkerLookupFix()
     replacement[0x18] = 'X';
     assert(ResolveLiveNetworkService(wrong) == 0);
     replacement[0x18] = 'S';
-    WritePtr(second, g_base + 0x20124a8);
+    WritePtr(second, g_gameModuleBase + 0x20124a8);
     assert(ResolveLiveNetworkService(wrong) == 0);
-    WritePtr(second, g_base + 0x20162b8);
+    WritePtr(second, g_gameModuleBase + 0x20162b8);
 
     // Restrict recovery to the observed caller. Unrelated callers still get
     // the supplied object and flags unchanged, even if the fix is enabled.
@@ -428,7 +446,7 @@ static void CheckNetworkWorkerLookupFix()
     g_networkWorkerPendingFlags.store(0);
     g_networkWorkerFix.store(false);
     g_originalWorkerCall = nullptr;
-    g_base = 0;
+    g_gameModuleBase = 0;
     DeleteCriticalSection(reinterpret_cast<CRITICAL_SECTION*>(good + 0x21a8));
     DeleteCriticalSection(reinterpret_cast<CRITICAL_SECTION*>(second + 0x21a8));
 }
@@ -489,6 +507,7 @@ static void CheckIndependentFpsGuard()
 
 static void CheckNativeCameraReferenceCapture()
 {
+    const bool cpuInstalled=g_cpuInterpolationHooksInstalled.exchange(true);
     NativeCameraPose native = {}, output = {};
     native.high[0] = 100;
     native.rotation[3] = 1;
@@ -513,35 +532,35 @@ static void CheckNativeCameraReferenceCapture()
     *reinterpret_cast<float*>(subsystem.data() + PhysicsStepOffset) = 1.0f/60;
     *reinterpret_cast<float*>(subsystem.data() + PhysicsAccumulatorOffset) = 1.0f/120;
     *reinterpret_cast<uint32_t*>(subsystem.data() + 0x5e9a8) = 1;
-    g_base = reinterpret_cast<uintptr_t>(root) - NativeCameraResourceRootRva;
-    g_data = reinterpret_cast<uintptr_t>(dataPage);
+    g_gameModuleBase = reinterpret_cast<uintptr_t>(root) - NativeCameraResourceRootRva;
+    g_callbackData = reinterpret_cast<uintptr_t>(dataPage);
     g_subsystem.store(reinterpret_cast<uintptr_t>(subsystem.data()));
 
-    ResetTracking();
-    g_pipelineOverrideEnabled.store(true);
-    WriteI64(g_data + DataPhysicsActiveOffset, 1);
-    WriteI64(g_data + DataPhysicsTickCounterOffset, 9);
+    ResetLegacySceneFixtures();
+    g_highFpsPresentationEnabled.store(true);
+    WriteI64(g_callbackData + DataPhysicsActiveOffset, 1);
+    WriteI64(g_callbackData + DataPhysicsTickCounterOffset, 9);
     const double nativeStep = double(1.0f / 60);
-    PublishExactFrameMeta(100, 9, 10, 9 * nativeStep, 10 * nativeStep, 9.5 * nativeStep);
-    WriteI64(g_data + DataPublishedGenerationOffset, 100);
+    PublishFrameClock(100, 9, 10, 9 * nativeStep, 10 * nativeStep, 9.5 * nativeStep);
+    WriteI64(g_callbackData + DataPublishedGenerationOffset, 100);
     uint8_t initialPacket[sizeof(packet)];
     memcpy(initialPacket, packet, sizeof(packet));
     CaptureNativeCameraPacket(reinterpret_cast<uintptr_t>(packet),
         reinterpret_cast<uintptr_t>(&native), reinterpret_cast<uintptr_t>(owner));
     assert(memcmp(packet, initialPacket, sizeof(packet)) == 0);
-    assert(g_gpuCameraReference.valid);
-    assert(memcmp(&g_gpuCameraReference.native, &native, sizeof(native)) == 0);
+    assert(g_cpuCamera.owner==reinterpret_cast<uintptr_t>(owner));
+    assert(g_cpuCamera.source==reinterpret_cast<uintptr_t>(&native));
     native.high[0] = 110;
     memcpy(packet + 0x10, &native, sizeof(native));
-    WriteI64(g_data + DataPhysicsTickCounterOffset, 10);
-    PublishExactFrameMeta(101, 10, 11, 10 * nativeStep, 11 * nativeStep, 10.5 * nativeStep);
-    WriteI64(g_data + DataPublishedGenerationOffset, 101);
+    WriteI64(g_callbackData + DataPhysicsTickCounterOffset, 10);
+    PublishFrameClock(101, 10, 11, 10 * nativeStep, 11 * nativeStep, 10.5 * nativeStep);
+    WriteI64(g_callbackData + DataPublishedGenerationOffset, 101);
     CaptureNativeCameraPacket(reinterpret_cast<uintptr_t>(packet),
         reinterpret_cast<uintptr_t>(&native), reinterpret_cast<uintptr_t>(owner));
     memcpy(&output, packet + 0x10, sizeof(output));
     assert(memcmp(&output, &native, sizeof(native)) == 0); // CPU packet is a read-only reference.
-    assert(g_gpuCameraReference.generation == 101 && g_gpuCameraReference.tick == 11);
-    assert(memcmp(&g_gpuCameraReference.native, &native, sizeof(native)) == 0);
+    assert(g_cpuCamera.handle==(uint64_t(1)<<32));
+    assert(g_cpuCamera.source==reinterpret_cast<uintptr_t>(&native));
     assert(memcmp(&output.high[3], &highW, 4) == 0 && memcmp(&output.low[3], &lowW, 4) == 0);
     for (int i = 0; i < 0x60; ++i)
         if (i < 0x10 || i >= 0x40) assert(packet[i] == 0xcc); // Header and FOV intact.
@@ -553,7 +572,7 @@ static void CheckNativeCameraReferenceCapture()
     CaptureNativeCameraPacket(reinterpret_cast<uintptr_t>(packet),
         reinterpret_cast<uintptr_t>(&mismatched), reinterpret_cast<uintptr_t>(owner));
     assert(memcmp(before, packet, sizeof(packet)) == 0);
-    assert(memcmp(&g_gpuCameraReference.native, &native, sizeof(native)) == 0);
+    assert(g_cpuCamera.source==reinterpret_cast<uintptr_t>(&native));
     memcpy(packet + 0x10, &native, sizeof(native));
     memcpy(before, packet, sizeof(packet));
     entries[0] = reinterpret_cast<uintptr_t>(before);
@@ -561,359 +580,12 @@ static void CheckNativeCameraReferenceCapture()
         reinterpret_cast<uintptr_t>(&native), reinterpret_cast<uintptr_t>(owner));
     assert(memcmp(before, packet, sizeof(packet)) == 0);
     NativeCameraClock clock = {};
-    WriteI64(g_data + DataPhysicsTickCounterOffset, INT64_MAX);
+    WriteI64(g_callbackData + DataPhysicsTickCounterOffset, INT64_MAX);
     assert(!ReadNativeCameraClock(&clock)); // Overflowing fixed-clock samples rejected.
-    g_data = g_base = 0;
+    g_cpuInterpolationHooksInstalled.store(cpuInstalled);
+    g_callbackData = g_gameModuleBase = 0;
     g_subsystem.store(0);
-    ResetTracking();
-}
-
-static void CheckGpuCameraSizeAdmission()
-{
-    using namespace IntegratedController;
-
-    const auto state=g_gpuCameraPosition;
-    const uintptr_t clock=g_frameGenerationAddress.load();
-
-    volatile LONG64 generation=501;
-    g_frameGenerationAddress.store(reinterpret_cast<uintptr_t>(&generation));
-    PublishExactFrameMeta(generation,11,12,11.0/60,12.0/60,11.5/60);
-    float upload[1024]{};
-    g_gpuCameraPosition.bound=true;
-    g_gpuCameraPosition.field.resource=reinterpret_cast<ID3D11Resource*>(0x777000);
-    g_gpuCameraPosition.field.size=208;
-    const MappedKey key={nullptr,g_gpuCameraPosition.field.resource};
-    for (UINT size : {32u,64u,80u,128u,256u,272u,624u,4096u})
-    {
-        assert(!ProcessGpuCameraBuffer(key,upload,size));
-        assert(g_gpuCameraPosition.bound && g_gpuCameraPosition.field.resource==key.resource);
-        assert(g_gpuCameraPosition.field.size==208);
-        for (float value : upload) assert(value==0);
-    }
-    g_gpuCameraPosition=state;
-
-    g_frameGenerationAddress.store(clock);
-}
-static void CheckGpuCameraAcquisition()
-{
-    const bool savedActive = g_active.exchange(true);
-    const bool savedPipeline = g_pipelineOverrideEnabled.exchange(true);
-    const uintptr_t savedClock = g_frameGenerationAddress.load();
-    ResetTracking();
-    LONG64 generation = 1;
-    g_frameGenerationAddress.store(reinterpret_cast<uintptr_t>(&generation));
-    const MappedKey key = {nullptr, reinterpret_cast<ID3D11Resource*>(0x8910)};
-    float upload[52] = {};
-    upload[0] = 2; upload[5] = 3; upload[10] = 0.01f; upload[14] = -1;
-    upload[16] = upload[21] = upload[26] = upload[31] = 1;
-    upload[19] = 83200;
-    upload[44] = 1920; upload[45] = 1080;
-    upload[46] = 1.0f / 1920; upload[47] = 1.0f / 1080;
-    float before[52]; memcpy(before, upload, sizeof(before));
-    PublishExactFrameMeta(generation, 0, 1, 0, 1.0 / 60, 0.5 / 60);
-    assert(!ProcessGpuCameraBuffer(key, upload, sizeof(upload))); // No native reference.
-    g_gpuCameraReference.valid = true;
-    g_gpuCameraReference.generation = generation;
-    g_gpuCameraReference.tick = 1;
-    g_gpuCameraReference.native.high[0] = 83201;
-    assert(!ProcessGpuCameraBuffer(key, upload, sizeof(upload))); // Different origin.
-    assert(g_gpuCameraPosition.candidates.empty());
-    g_gpuCameraReference.native.high[0] = 83200;
-    double position[3];
-    assert(GpuCameraMainViewBuffer(upload, sizeof(upload), position));
-    assert(position[0] == 83200 && position[1] == 0 && position[2] == 0);
-    for (unsigned repeat = 0; repeat < 2; ++repeat)
-    {
-        assert(ProcessGpuCameraBuffer(key, upload, sizeof(upload)));
-        assert(!g_gpuCameraPosition.bound && g_gpuCameraPosition.candidates.size() == 1);
-        const auto& candidate = g_gpuCameraPosition.candidates.front();
-        assert(candidate.generations == 1 && candidate.ticks == 1);
-        assert(!memcmp(upload, before, sizeof(upload)));
-    }
-    // A five-generation gap restarts qualification; nine expires the candidate.
-    for (LONG64 next : {6LL, 15LL})
-    {
-        generation = next;
-        g_gpuCameraReference.generation = generation;
-        PublishExactFrameMeta(generation, 0, 1, 0, 1.0 / 60, 0.5 / 60);
-        assert(ProcessGpuCameraBuffer(key, upload, sizeof(upload)));
-        assert(!g_gpuCameraPosition.bound && g_gpuCameraPosition.candidates.size() == 1);
-        assert(g_gpuCameraPosition.candidates.front().generations == 1);
-        assert(g_gpuCameraPosition.candidates.front().ticks == 1);
-    }
-    // A full candidate list still claims matching camera bytes without writing.
-    g_gpuCameraPosition.candidates.clear();
-    for (uintptr_t i = 0; i < 128; ++i)
-    {
-        GpuCameraCandidate candidate;
-        candidate.field = {reinterpret_cast<ID3D11Resource*>(0x10000 + i), 208, 64,
-            GpuCameraFormat::ColumnWorldWithLow};
-        candidate.lastGeneration = generation;
-        g_gpuCameraPosition.candidates.push_back(candidate);
-    }
-    assert(ProcessGpuCameraBuffer(key, upload, sizeof(upload)));
-    assert(!g_gpuCameraPosition.bound && g_gpuCameraPosition.candidates.size() == 128);
-    assert(!memcmp(upload, before, sizeof(upload)));
-
-    // Render generations and movement alone cannot replace four distinct ticks.
-    g_gpuCameraPosition = {};
-    for (LONG64 n = 1; n <= 11; ++n)
-    {
-        generation = 20 + n;
-        const LONG64 tick = n <= 8 ? 1 : n - 7;
-        upload[32] = float(n) * 0.125f;
-        g_gpuCameraReference.native.low[0] = upload[32];
-        g_gpuCameraReference.generation = generation;
-        g_gpuCameraReference.tick = tick;
-        PublishExactFrameMeta(generation, tick - 1, tick,
-            (tick - 1) / 60.0, tick / 60.0, (tick - 0.5) / 60.0);
-        assert(ProcessGpuCameraBuffer(key, upload, sizeof(upload)));
-        assert(g_gpuCameraPosition.bound == (n == 11));
-    }
-    assert(g_gpuCameraPosition.field.resource == key.resource);
-    ResetTracking();
-    g_frameGenerationAddress.store(savedClock);
-    g_active.store(savedActive);
-    g_pipelineOverrideEnabled.store(savedPipeline);
-}
-
-static void CheckGpuCameraPositionPipeline()
-{
-    float probeCamera[52] = {};
-    probeCamera[0xb0 / 4] = probeCamera[0xb0 / 4 + 1] = 256;
-    probeCamera[0xb0 / 4 + 2] = probeCamera[0xb0 / 4 + 3] = 1.0f / 256;
-    assert(GpuCameraAuxiliaryViewport(probeCamera, sizeof(probeCamera)));
-    probeCamera[0xb0 / 4] = 1920; probeCamera[0xb0 / 4 + 1] = 1080;
-    probeCamera[0xb0 / 4 + 2] = 1.0f / 1920; probeCamera[0xb0 / 4 + 3] = 1.0f / 1080;
-    assert(!GpuCameraAuxiliaryViewport(probeCamera, sizeof(probeCamera)));
-    const GpuCameraFormat formats[] = {GpuCameraFormat::SplitMatrix, GpuCameraFormat::ColumnWorldWithLow};
-    for (auto format : formats)
-    {
-        float field[20] = {};
-        field[0] = field[5] = float(std::cos(0.4));
-        field[1] = float(std::sin(0.4)); field[4] = -field[1];
-        field[10] = field[15] = 1;
-        float world[16] = {};
-        world[0] = world[5] = world[10] = world[15] = 1;
-        world[12] = 123; world[13] = -50; world[14] = 17;
-        EncodeGpuCameraPosition(field, format, world);
-        double decoded[3];
-        assert(DecodeGpuCameraPosition(field, format, decoded));
-        for (int axis = 0; axis < 3; ++axis)
-            assert(std::fabs(decoded[axis] - MatrixPosition(world, axis)) < 1e-3);
-    }
-    ResetTracking();
-    alignas(16) uint8_t packet[0x60], owner[0x68] = {}, registry[0x58] = {};
-    uintptr_t entries[] = {reinterpret_cast<uintptr_t>(packet)};
-    uintptr_t table = reinterpret_cast<uintptr_t>(entries);
-    WritePtr(reinterpret_cast<uintptr_t>(registry) + 0x10, reinterpret_cast<uintptr_t>(&table));
-    const uint64_t handle = uint64_t(1) << 32;
-    WriteI64(reinterpret_cast<uintptr_t>(owner) + 0x60, handle);
-    g_base = reinterpret_cast<uintptr_t>(registry) - NativeCameraResourceRootRva;
-    LONG64 consumed = 0;
-    g_frameGenerationAddress.store(reinterpret_cast<uintptr_t>(&consumed));
-
-    g_active.store(true); g_pipelineOverrideEnabled.store(true);
-    g_originalUnmap = NativeUnmap;
-    const MappedKey key = {nullptr, reinterpret_cast<ID3D11Resource*>(0x8900)};
-    NativeCameraPose native = {};
-    native.rotation[3] = 1;
-    const uint32_t highW = 0x7f801234, lowW = 0xdeadbeef;
-    memcpy(&native.high[3], &highW, 4); memcpy(&native.low[3], &lowW, 4);
-    const double step = 1.0 / 60;
-    const MappedKey worldKey = {nullptr, reinterpret_cast<ID3D11Resource*>(0x9900)};
-    const auto worldCohort = [&](LONG64 generation, LONG64 tick)
-    {
-        BeginCleanGpuTick(tick);
-        auto& slots = g_sceneMtx[worldKey].slots;
-        if (slots.empty()) slots.resize(1);
-        float pose[16] = {};
-        pose[0] = pose[5] = pose[10] = pose[15] = 1;
-        ObserveCleanGpuCandidate(slots[0], pose, generation, tick, tick * step);
-    };
-    ResetTracking();
-    unsigned subtickRotationChanges = 0;
-    double lastAngle = 0;
-    LONG64 lastTick = -1;
-    for (LONG64 generation = 1; generation <= 48; ++generation)
-    {
-        consumed = generation;
-        const LONG64 tick = 10 + (generation - 1) / 4;
-        const double time = (double(tick - 1) + 0.25 * ((generation - 1) % 4)) * step;
-        PublishExactFrameMeta(generation, tick - 1, tick, (tick - 1) * step, tick * step, time);
-        worldCohort(generation, tick);
-        float upload[52] = {};
-        float* field = upload + 16;
-        const double yaw = 0.04 * (tick - 10);
-        field[0] = field[5] = float(std::cos(yaw));
-        field[1] = -float(std::sin(yaw)); field[4] = -field[1];
-        field[10] = field[15] = 1;
-        native.high[0] = field[3] = 83200;
-        native.high[1] = field[7] = 52000;
-        native.high[2] = field[11] = 200;
-        native.low[0] = field[16] = float(generation) * 0.125f;
-        native.low[1] = field[17] = float(generation) * 0.25f;
-        native.low[2] = field[18] = 0.5f;
-        native.rotation[0] = native.rotation[1] = 0;
-        native.rotation[2] = float(std::sin(yaw / 2)); native.rotation[3] = float(std::cos(yaw / 2));
-        if (g_gpuCameraPosition.bound) native.high[0] += 4; // CPU/GPU phase difference cannot retire a proven main view
-        const double scales[] = {2, 3, 0.01, -1};
-        for (int row = 0; row < 4; ++row)
-            for (int axis = 0; axis < 3; ++axis)
-                upload[row * 4 + axis] = float(scales[row] * field[axis * 4 + std::min(row, 2)]);
-        upload[11] = 0.5f;
-        upload[44] = 1920; upload[45] = 1080; upload[46] = 1.0f/1920; upload[47] = 1.0f/1080;
-        memset(packet, 0xcc, sizeof(packet)); memcpy(packet + 0x10, &native, sizeof(native));
-        CaptureGpuCameraPacket(reinterpret_cast<uintptr_t>(owner),
-            reinterpret_cast<uintptr_t>(&native), handle, generation - 1, tick, native);
-        // Reflection passes can reuse the main view's buffer before or after
-        // its upload. Native and 4X face views must not acquire the camera,
-        // retire its binding, replace a cohort, or rewrite reflection bytes.
-        for (float faceSize : {256.0f, 512.0f, 1024.0f})
-        {
-            float cube[52]; memcpy(cube, upload, sizeof(cube));
-            for (int axis = 0; axis < 3; ++axis)
-            {
-                cube[axis] = field[axis * 4];
-                cube[4 + axis] = field[axis * 4 + 1];
-            }
-            cube[44] = cube[45] = faceSize;
-            cube[46] = cube[47] = 1.0f / faceSize;
-            assert(GpuCameraCubeFaceBuffer(cube, sizeof(cube)));
-            assert(!GpuCameraMainViewBuffer(cube, sizeof(cube)));
-            float before[52]; memcpy(before, cube, sizeof(before));
-            const bool bound = g_gpuCameraPosition.bound;
-            const auto binding = g_gpuCameraPosition.field;
-            const auto candidateCount = g_gpuCameraPosition.candidates.size();
-            const auto cohortCount = g_gpuCameraPosition.cleanCandidates.size();
-            const auto presentedGeneration = g_gpuCameraPosition.entry.presentedFrameGeneration;
-            assert(!ProcessGpuCameraBuffer(key, cube, sizeof(cube)));
-            assert(memcmp(cube, before, sizeof(cube)) == 0);
-            assert(g_gpuCameraPosition.bound == bound && g_gpuCameraPosition.field == binding);
-            assert(g_gpuCameraPosition.candidates.size() == candidateCount);
-            assert(g_gpuCameraPosition.cleanCandidates.size() == cohortCount);
-            assert(g_gpuCameraPosition.entry.presentedFrameGeneration == presentedGeneration);
-            // The viewport alone is not enough: a square display with its
-            // ordinary perspective projection remains a valid main view.
-            float squareDisplay[52]; memcpy(squareDisplay, upload, sizeof(squareDisplay));
-            squareDisplay[44] = squareDisplay[45] = faceSize;
-            squareDisplay[46] = squareDisplay[47] = 1.0f / faceSize;
-            if (faceSize == 1024)
-                assert(GpuCameraMainViewBuffer(squareDisplay, sizeof(squareDisplay)));
-        }
-        if (g_gpuCameraPosition.bound)
-        {
-            // A position-only lighting clone arrives before the real camera.
-            // Matching coordinates must not let it steal the view/projection.
-            float clone[12] = {};
-            memcpy(clone, native.high, 3 * sizeof(float));
-            memcpy(clone + 4, native.low, 3 * sizeof(float));
-            const auto resource = g_gpuCameraPosition.field.resource;
-            const auto binding = g_gpuCameraPosition.field;
-            assert(!ProcessGpuCameraBuffer({nullptr, reinterpret_cast<ID3D11Resource*>(0xa000)}, clone, sizeof(clone)));
-            assert(g_gpuCameraPosition.bound && g_gpuCameraPosition.field.resource == resource);
-            assert(g_gpuCameraPosition.field == binding);
-        }
-        g_mapped[key] = {upload, sizeof(upload)};
-        HookUnmap(key.context, key.resource, 0);
-        if (!g_gpuCameraPosition.bound) continue;
-        assert(g_gpuCameraPosition.field.format == GpuCameraFormat::ColumnWorldWithLow);
-        assert(g_gpuCameraPosition.field.offset == 64);
-        const auto& presented = g_gpuCameraPosition.entry.presentedFrameOutput;
-        for (int row = 0; row < 4; ++row)
-            for (int axis = 0; axis < 3; ++axis)
-                assert(std::fabs(upload[row * 4 + axis] -
-                    scales[row] * presented[axis * 4 + std::min(row, 2)]) < 1e-5);
-        const double angle = std::atan2(field[4], field[0]);
-        NativeCameraPose output;
-        memcpy(&output, packet + 0x10, sizeof(output));
-        assert(memcmp(&output, &native, sizeof(native)) == 0);
-        assert(upload[11] == 0.5f && upload[44] == 1920 && upload[45] == 1080);
-        assert(memcmp(&output.high[3], &highW, 4) == 0 && memcmp(&output.low[3], &lowW, 4) == 0);
-        if (tick == lastTick && std::fabs(angle - lastAngle) > 1e-5) ++subtickRotationChanges;
-        lastTick = tick; lastAngle = angle;
-    }
-    assert(subtickRotationChanges >= 8); // native changes once/tick; presented orientation changes inside ticks
-    assert(g_gpuCameraPosition.bound && g_gpuCameraPosition.field.resource == key.resource);
-
-    g_active.store(false); g_frameGenerationAddress.store(0); g_base = 0;
-    ResetTracking();
-}
-
-static void CheckGpuCameraFinalizedCorrections()
-{
-    const bool savedActive = g_active.exchange(true);
-    const bool savedPipeline = g_pipelineOverrideEnabled.exchange(true);
-
-    LONG64 consumed = 0;
-    g_frameGenerationAddress.store(reinterpret_cast<uintptr_t>(&consumed));
-    const double step = 1.0 / 60;
-    for (bool positionLate : {true, false})
-    {
-        ResetTracking();
-        g_gpuCameraPosition.bound = true;
-        g_gpuCameraPosition.field = {reinterpret_cast<ID3D11Resource*>(0xb000), 208, 64,
-            GpuCameraFormat::ColumnWorldWithLow};
-        auto& entry = g_gpuCameraPosition.entry;
-        auto& clean = g_gpuCameraPosition.cleanSnapshots;
-        clean.hasPrevious = clean.hasCurrent = true;
-        clean.previousTick = 99; clean.currentTick = 100;
-        clean.previousGeneration = 198; clean.currentGeneration = 199;
-        clean.previousTime = 99 * step; clean.currentTime = 100 * step;
-        clean.previous[0] = clean.previous[5] = clean.previous[10] = clean.previous[15] = 1;
-        memcpy(clean.current, clean.previous, sizeof(clean.current));
-        const MappedKey worldKey = {nullptr, reinterpret_cast<ID3D11Resource*>(0xb100)};
-        auto& slots = g_sceneMtx[worldKey].slots;
-        slots.resize(2);
-        for (int frame = 0; frame < 5; ++frame)
-        {
-            consumed = 200 + frame;
-            const LONG64 tick = frame < 4 ? 101 : 102;
-            const double phase = frame < 4 ? 0.1 + frame * 0.2 : 0.5;
-            const double time = (tick - 1 + phase) * step;
-            PublishExactFrameMeta(consumed, tick-1, tick, (tick-1)*step, tick*step, time);
-            BeginCleanGpuTick(tick);
-            float world[16] = {};
-            world[0] = world[5] = world[10] = world[15] = 1;
-            ObserveCleanGpuCandidate(slots[0], world, consumed, tick, tick*step);
-            // Wider early coverage must not roll back a later native endpoint.
-            if (frame == 1 || frame == 4)
-                ObserveCleanGpuCandidate(slots[1], world, consumed, tick, tick*step);
-            float upload[52] = {};
-            float* field = upload + 16;
-            const double position = positionLate && frame == 0 ? 0 : frame >= 2 ? 1.4 : 1;
-            const double yaw = !positionLate && frame == 0 ? 0 : frame >= 2 ? 0.4 : 0.2;
-            field[0] = field[5] = float(std::cos(yaw));
-            field[1] = -float(std::sin(yaw)); field[4] = -field[1];
-            field[10] = field[15] = 1;
-            field[16] = float(position);
-            const double scales[] = {2, 3, 0.01, -1};
-            for (int row = 0; row < 4; ++row)
-                for (int axis = 0; axis < 3; ++axis)
-                    upload[row * 4 + axis] = float(scales[row] * field[axis * 4 + std::min(row, 2)]);
-            upload[11] = 0.5f;
-            upload[44] = 1920; upload[45] = 1080; upload[46] = 1.0f/1920; upload[47] = 1.0f/1080;
-            assert(ProcessGpuCameraBuffer({nullptr, g_gpuCameraPosition.field.resource}, upload, sizeof(upload)));
-            const double expectedPosition = frame < 4 ? phase*position : 1.4;
-            const double expectedAngle = frame < 4 ? phase*yaw : 0.4;
-            assert(std::fabs(MatrixPosition(entry.presentedFrameOutput, 0)-expectedPosition) < 1e-5);
-            assert(std::fabs(std::atan2(entry.presentedFrameOutput[4],
-                entry.presentedFrameOutput[0])-expectedAngle) < 1e-5);
-            assert(entry.presentedStartTick == tick-1 && entry.presentedEndTick == tick);
-            if (frame < 4) assert(clean.currentTick == 100);
-            else
-            {
-                assert(clean.currentGeneration == 203 && clean.currentTick == 101);
-                assert(std::fabs(MatrixPosition(clean.current, 0)-1.4) < 1e-5);
-                assert(std::fabs(std::atan2(clean.current[4],clean.current[0])-0.4) < 1e-5);
-            }
-        }
-    }
-
-    g_frameGenerationAddress.store(0);
-    ResetTracking();
-    g_active.store(savedActive);
-    g_pipelineOverrideEnabled.store(savedPipeline);
+    ResetLegacySceneFixtures();
 }
 
 int main()
@@ -926,8 +598,14 @@ int main()
     MinHookPatchTests::Check();
     MenuSettingsRegression::Run();
     NativeHookChainTests::Check();
-    InitializeCriticalSection(&g_lock);
-    CheckNativeUploadRouting();
+    InitializeCriticalSection(&g_presentationLock);
+    StartupFeatureTests::Check();
+    CpuInterpolationTests::Check();
+    CpuAdmissionTests::Check();
+    CpuHistoryPruningTests::Check();
+    EffectPopulationTests::Check();
+    CpuPresentationCohortTests::Check();
+    CheckLegacyUploadRouting();
     CheckMappingNodeReuse();
     CheckMappingLifetime();
     CheckUploadLayoutAdmission();
@@ -937,22 +615,20 @@ int main()
     StaleLightJobRegression::Run();
     StaleClockPathRegression::Run();
     AmbientAlignmentRegression::Run();
+    CpuLightConsumptionRegression::Run();
     PointAlignmentRegression::Run();
     LightProviderIndexTests::Check();
+    LightConsumptionScalingTests::Check();
+    ScalingPathTests::Check();
+    CpuPageValidationTests::Check();
+    CpuLightCameraBasisTests::Check();
     LightPayloadIndexTests::Check();
-    NativeLightHistoryLookupTests::Check();
-    SameFrameLightUploadsRegression::Run();
-    LightGenerationBoundaryRegression::Run();
+    LightSourceHistoryLookupTests::Check();
     CheckWorkerHookForwarding();
     CheckNetworkWorkerLookupFix();
     CheckIndependentFpsGuard();
     FramerateMenuTests::Check();
     CheckNativeCameraReferenceCapture();
-    CheckGpuCameraSizeAdmission();
-    CheckGpuCameraAcquisition();
-    CheckGpuCameraPositionPipeline();
-    CheckGpuCameraFinalizedCorrections();
-    CameraRotationTests::Check();
     auto* allocation = static_cast<uint8_t*>(VirtualAlloc(nullptr, 0x4000,
         MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE));
     assert(allocation);
@@ -979,8 +655,6 @@ int main()
     Add(native, 0x48, 0x89, 0x51, 0x40, 0x4c, 0x89, 0x41, 0x48,
         0x4c, 0x89, 0x49, 0x50, 0x48, 0x89, 0xe0, 0x83, 0xe0, 0x0f,
         0x48, 0x89, 0x41, 0x58, 0x48, 0xb8);
-    AddInt64(native, data + DataRenderActiveOffset);
-    Add(native, 0x48, 0x8b, 0x00, 0x48, 0x89, 0x41, 0x60, 0x48, 0xb8);
     AddInt64(native, returnValue);
     Add(native, 0xc3);
     CopyCode(nativeRender, native);
@@ -1012,7 +686,7 @@ int main()
     const auto render = BuildRenderCallbackStub(base, data, nativeRender, helper);
     assert(render.size() <= CameraPacketStubOffset);
     CopyCode(base, render);
-    const auto camera = BuildCameraPacketStub(base + CameraPacketStubOffset, data,
+    const auto camera = BuildCameraPacketStub(base + CameraPacketStubOffset,
         packetPatch - CameraPacketPatchRva, packetHelper);
     assert(camera.size() <= PhysicsStubOffset - CameraPacketStubOffset);
     CopyCode(base + CameraPacketStubOffset, camera);
@@ -1079,7 +753,6 @@ int main()
         0x45, 0x31, 0xd2, 0x45, 0x31, 0xdb, 0xc3);
     CopyCode(packetHelper, clobber);
     CopyCode(trampolineInvoker, {0x48, 0x83, 0xec, 0x28, 0xff, 0xe1});
-    WriteI64(data + DataLatchedGenerationOffset, -1);
     DWORD oldProtection = 0;
     assert(VirtualProtect(allocation, 0x2000, PAGE_EXECUTE_READ, &oldProtection));
     FlushInstructionCache(GetCurrentProcess(), allocation, 0x2000);
@@ -1088,13 +761,14 @@ int main()
     for (int fps : {60, 240})
     {
         SetPipelineTarget(fps);
+        WriteI64(data+0x298,0x11223344); // Reserved retired data slots.
+        WriteI64(data+0x2b0,0x55667788);
         Probe probe = {};
         assert(reinterpret_cast<RenderFn>(invoker)(&probe) == returnValue);
         assert(memcmp(probe.xmm, reinterpret_cast<void*>(data + 0x500), sizeof(probe.xmm)) == 0);
         assert(probe.rdx == 22 && probe.r8 == 33 && probe.r9 == 44);
         assert(probe.stackAlignment == 8);
-        assert(probe.renderActive == (fps > 60 ? 1 : 0));
-        assert(ReadI64(data + DataRenderActiveOffset) == 0);
+        assert(ReadI64(data+0x298)==0x11223344 && ReadI64(data+0x2b0)==0x55667788);
         if (fps > 60)
             assert(ReadI64(data + 0x400) == 8); // Helper also enters with valid ABI alignment.
     }
@@ -1176,6 +850,6 @@ int main()
     assert(callback == base);
     assert(ReplaceCallback(reinterpret_cast<uintptr_t>(&callback), base, nativeRender));
     VirtualFree(allocation, 0, MEM_RELEASE);
-    DeleteCriticalSection(&g_lock);
-    puts("PASS: light builder ABI and native exception forwarding; GPU camera position, rotation, projection and main-view retention; GPU root tracking; network lookup repair, deferred flag replay, replacement/ambiguity, caller scope and original exceptions; worker hook MinHook ABI; camera/car timing; native COW validation; mapping; FPS guard");
+    DeleteCriticalSection(&g_presentationLock);
+    puts("PASS: light builder ABI and native exception forwarding; CPU camera reference and render handoff; native root tracking; network lookup repair, deferred flag replay, replacement/ambiguity, caller scope and original exceptions; worker hook MinHook ABI; camera/car timing; native COW validation; mapping; FPS guard");
 }
