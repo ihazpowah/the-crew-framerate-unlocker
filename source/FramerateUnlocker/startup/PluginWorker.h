@@ -14,6 +14,8 @@ static void InstallOptionalFeatures()
     IntegratedController::MapCursor::Install();
     IntegratedController::CursorHeight::Install();
     IntegratedController::ManualShift::Install();
+    IntegratedController::RenderResponse::Install();
+    IntegratedController::DriverPose::Install();
     IntegratedController::InstallLightSourceHook();
 }
 

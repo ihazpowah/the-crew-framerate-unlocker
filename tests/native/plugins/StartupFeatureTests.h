@@ -16,6 +16,8 @@ static void Check()
     assert(!IntegratedController::MapCursor::Install());
     assert(!IntegratedController::CursorHeight::Install());
     assert(!IntegratedController::ManualShift::Install());
+    assert(!IntegratedController::RenderResponse::Install());
+    assert(!IntegratedController::DriverPose::Install());
     assert(!g_presentationActive.load());
     InstallOptionalFeatures();
     assert(g_presentationActive.load());

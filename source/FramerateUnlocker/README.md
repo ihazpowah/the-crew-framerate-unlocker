@@ -59,6 +59,20 @@ When active, cursor world-height easing retains its native 60 Hz response across
 rates. Its fixed 10% step is extended using the render manager's elapsed seconds;
 the native activation condition and world-to-screen projection remain in place.
 
+Bezier camera-transition easing and vehicle-whoosh release extend their native
+60 Hz coefficients using the native elapsed seconds. Bezier retains its
+direction blend/normalization, scalar FOV/clipping updates and duration timer;
+whoosh retains its proximity refresh, cutoff and audio parameter delivery.
+At a native 60 Hz interval the original float coefficients are used directly.
+The paired hooks validate both executable profiles and install together.
+`RenderResponseTests` covers their numeric response and executable hook ABI.
+
+Driver/avatar pose smoothing extends both native 0.9/0.1 recurrences using the
+elapsed seconds already supplied to the driving component. Native float operation
+order, target scales and exact 60 Hz coefficients are preserved. The independent
+optional hook validates both executable profiles; `DriverPoseTests` checks its
+elapsed-time response and executes the replaced native block to verify its ABI.
+
 CPU interpolation must install successfully before presentation becomes active.
 Startup owns that activation. Shadow, flare, minimap, cursor, menu and light hooks are
 optional; a rejected optional target does not stop the core controller loop.

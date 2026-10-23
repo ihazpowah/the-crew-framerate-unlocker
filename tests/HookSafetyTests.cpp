@@ -17,6 +17,8 @@ using namespace IntegratedController;
 #include "native/plugins/StartupFeatureTests.h"
 #include "native/plugins/MapCursorTests.h"
 #include "native/plugins/CursorHeightTests.h"
+#include "native/plugins/RenderResponseTests.h"
+#include "native/plugins/DriverPoseTests.h"
 #include "native/plugins/ManualShiftTests.h"
 #include "GameBuildTests.h"
 #include "native/plugins/MenuSettingsTests.h"
@@ -609,6 +611,8 @@ int main()
     StartupFeatureTests::Check();
     MapCursorTests::Check();
     CursorHeightTests::Check();
+    RenderResponseTests::Check();
+    DriverPoseTests::Check();
     ManualShiftTests::Check();
     CpuInterpolationTests::Check();
     CpuAdmissionTests::Check();

@@ -45,6 +45,8 @@
 #include "input/MapCursor.h"
 #include "input/CursorHeight.h"
 #include "input/ManualShift.h"
+#include "presentation/RenderResponse.h"
+#include "presentation/DriverPose.h"
 #include "menu/FramerateMenu.h"
 #include "presentation/lighting/LightSourceInterpolation.h"
 
