@@ -13,6 +13,8 @@ static void Check()
     // A missing minimap target must neither activate nor disable the core.
     g_gameModuleBase=0;
     assert(!InstallMinimapHook());
+    assert(!IntegratedController::MapCursor::Install());
+    assert(!IntegratedController::CursorHeight::Install());
     assert(!g_presentationActive.load());
     InstallOptionalFeatures();
     assert(g_presentationActive.load());

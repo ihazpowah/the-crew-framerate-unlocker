@@ -42,6 +42,8 @@
 #include "presentation/CpuInterpolation.h"
 #include "runtime/ControllerHooks.h"
 #include "runtime/FramerateControl.h"
+#include "input/MapCursor.h"
+#include "input/CursorHeight.h"
 #include "menu/FramerateMenu.h"
 #include "presentation/lighting/LightSourceInterpolation.h"
 

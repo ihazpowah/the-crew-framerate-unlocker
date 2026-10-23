@@ -20,6 +20,7 @@ for its owned numeric samples. No core operation reads native pointers.
 | menu | FPS choices, preview, Apply and discard. |
 | menu/DisplayRefreshRates.h | DXGI display queries shared by menu and runtime through DisplayModes. |
 | startup | Feature installation and controller-loop startup. |
+| input | Controller map cursor movement, activity detection and conditional height easing. |
 | presentation | CPU vehicle, prop, wheel, bone and camera interpolation; ownership discovery; minimap and above-car player tag presentation. |
 | presentation/cpu | Ordered CPU state, readability, resource lifetime, pose encoding, binding, capture, delivery and hook implementation headers. |
 | presentation/history | Core history aliases, native clock validation and source-light cohort publication. |
@@ -49,8 +50,17 @@ Apply saves the selection in
 TheCrew.FramerateUnlocker.dat beside the ASI. Legacy FPS-only DAT files remain
 readable. No INI is required.
 
+Controller map cursor movement retains its native 60 Hz response across render
+rates and variable frame times, including acceleration and release behavior.
+A paired activity fix prevents small high-FPS frame displacements from being
+discarded. Mouse input keeps its native path.
+
+When active, cursor world-height easing retains its native 60 Hz response across render
+rates. Its fixed 10% step is extended using the render manager's elapsed seconds;
+the native activation condition and world-to-screen projection remain in place.
+
 CPU interpolation must install successfully before presentation becomes active.
-Startup owns that activation. Shadow, flare, minimap, menu and light hooks are
+Startup owns that activation. Shadow, flare, minimap, cursor, menu and light hooks are
 optional; a rejected optional target does not stop the core controller loop.
 Capture follows the native producer join and validates ownership, native resource
 identities, current page protections and the fixed-step clock. Render consumers

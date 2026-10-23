@@ -11,6 +11,8 @@ static void InstallOptionalFeatures()
     // Activation belongs to the core, rather than an optional minimap hook.
     g_presentationActive.store(true,std::memory_order_release);
     IntegratedController::FramerateMenu::Install();
+    IntegratedController::MapCursor::Install();
+    IntegratedController::CursorHeight::Install();
     IntegratedController::InstallLightSourceHook();
 }
 
