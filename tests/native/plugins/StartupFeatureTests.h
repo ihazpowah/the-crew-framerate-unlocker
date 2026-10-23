@@ -15,6 +15,7 @@ static void Check()
     assert(!InstallMinimapHook());
     assert(!IntegratedController::MapCursor::Install());
     assert(!IntegratedController::CursorHeight::Install());
+    assert(!IntegratedController::ManualShift::Install());
     assert(!g_presentationActive.load());
     InstallOptionalFeatures();
     assert(g_presentationActive.load());

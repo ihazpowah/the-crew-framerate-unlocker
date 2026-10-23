@@ -13,6 +13,7 @@ static void InstallOptionalFeatures()
     IntegratedController::FramerateMenu::Install();
     IntegratedController::MapCursor::Install();
     IntegratedController::CursorHeight::Install();
+    IntegratedController::ManualShift::Install();
     IntegratedController::InstallLightSourceHook();
 }
 

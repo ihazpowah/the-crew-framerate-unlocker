@@ -11,6 +11,8 @@ static void Check()
     assert(ImageSize() == 0x5252000);
     assert(Rva(0x3d02f0) == 0x3cdd30);
     assert(Rva(0x455c80) == 0x452600);
+    assert(Rva(0x1b44a0) == 0x1b2f40 && Rva(0x74f2e2) == 0x74b3e2);
+    assert(Rva(0x15ae270) == 0x15b04c0 && Rva(0x15af63b) == 0x15b188b);
     assert(Rva(0x2c98a40) == 0x2c9aa40);
     assert(Rva(0x17378b0) == 0x1744010);
     assert(Rva(0x8c1f10) == 0x7177b0);

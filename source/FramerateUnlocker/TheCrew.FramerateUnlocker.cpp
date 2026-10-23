@@ -44,6 +44,7 @@
 #include "runtime/FramerateControl.h"
 #include "input/MapCursor.h"
 #include "input/CursorHeight.h"
+#include "input/ManualShift.h"
 #include "menu/FramerateMenu.h"
 #include "presentation/lighting/LightSourceInterpolation.h"
 

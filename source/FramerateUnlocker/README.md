@@ -128,3 +128,9 @@ regression coverage. Historical light-correction fixtures remain under
 tests/reference/light-correction.
 
 See [architecture](../../docs/Architecture.md) for CPU composition and test boundaries.
+
+Manual shift commands are retained between render input copies and delivered once
+to the next native physics gearbox update above 60 FPS. The native gearbox keeps
+its clutch, cooldown and shift acceptance rules. Direct H-shifter inputs and native
+30/60 FPS behavior remain native. Pending commands expire after 250 ms and reset
+when the vehicle, input source, thread or presentation epoch changes.
