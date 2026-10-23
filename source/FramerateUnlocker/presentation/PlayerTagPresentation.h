@@ -40,11 +40,11 @@ static bool CapturePlayerTagBinding(uintptr_t movie,PlayerTagBinding& out)
     uint8_t ancestor=0;
     unsigned flags=0;
     if (!CpuInterpolationEnabled() || !g_presentationActive.load() ||
-        !ReadNonNullPointer(movie+0xd0,&component) || !ReadNonNullPointer(component,&vt) || vt!=g_gameModuleBase+0x2100df0 ||
+        !ReadNonNullPointer(movie+0xd0,&component) || !ReadNonNullPointer(component,&vt) || vt!=GameBuild::At(g_gameModuleBase, 0x2100df0) ||
         !ReadNonNullPointer(component+0x138,&linkedMovie) || linkedMovie!=movie ||
         !SafeRead(component+0x94,&ancestor) || ancestor || !SafeRead(component+0x178,&localPose) || localPose ||
-        !ReadNonNullPointer(component+0x18,&actor) || !ReadNonNullPointer(actor,&vt) || vt!=g_gameModuleBase+0x20865a0 ||
-        !ReadNonNullPointer(actor+0x188,&binding) || !ReadNonNullPointer(binding,&vt) || vt!=g_gameModuleBase+0x205db40 ||
+        !ReadNonNullPointer(component+0x18,&actor) || !ReadNonNullPointer(actor,&vt) || vt!=GameBuild::At(g_gameModuleBase, 0x20865a0) ||
+        !ReadNonNullPointer(actor+0x188,&binding) || !ReadNonNullPointer(binding,&vt) || vt!=GameBuild::At(g_gameModuleBase, 0x205db40) ||
         !ReadNonNullPointer(binding+0x18,&self) || self!=actor || !ReadNonNullPointer(binding+0xa0,&self) || self!=actor ||
         !ReadNonNullPointer(binding+0xa8,&parent) || !CpuVehicleActor(parent,&out.actorId) ||
         !SafeRead(binding+0x30,&flags) || (flags&7)!=7 ||

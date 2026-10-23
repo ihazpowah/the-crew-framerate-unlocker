@@ -49,41 +49,41 @@ static bool InstallCpuInterpolationHooks()
         {0x16a3f97,reinterpret_cast<void*>(g_allocation+CpuPaletteSourceStubOffset),&paletteTrampoline,paletteSource,sizeof(paletteSource)}};
     if (!g_gameModuleBase || !g_allocation) return false;
     uint8_t actual[16];
-    if (!SafeCopyFrom(g_gameModuleBase+0x173efc0,actual,sizeof(cow)) || memcmp(actual,cow,sizeof(cow))) return false;
-    if (!SafeCopyFrom(g_gameModuleBase+0x173ec50,actual,sizeof(paletteCow)) || memcmp(actual,paletteCow,sizeof(paletteCow))) return false;
-    if (!SafeCopyFrom(g_gameModuleBase+0x174efa0,actual,sizeof(wheelCow)) || memcmp(actual,wheelCow,sizeof(wheelCow))) return false;
+    if (!SafeCopyFrom(GameBuild::At(g_gameModuleBase, 0x173efc0),actual,sizeof(cow)) || !GameBuild::Matches(0x173efc0,actual,cow,sizeof(cow))) return false;
+    if (!SafeCopyFrom(GameBuild::At(g_gameModuleBase, 0x173ec50),actual,sizeof(paletteCow)) || !GameBuild::Matches(0x173ec50,actual,paletteCow,sizeof(paletteCow))) return false;
+    if (!SafeCopyFrom(GameBuild::At(g_gameModuleBase, 0x174efa0),actual,sizeof(wheelCow)) || !GameBuild::Matches(0x174efa0,actual,wheelCow,sizeof(wheelCow))) return false;
     for (uintptr_t caller:{uintptr_t(0x170039a),uintptr_t(0x1700c4b),uintptr_t(0x16f8170),uintptr_t(0x16f8e3a),uintptr_t(0x16dcfe1),uintptr_t(0x16a67b7)})
     {
         uint8_t call[5]; int32_t displacement=0;
-        if (!SafeCopyFrom(g_gameModuleBase+caller-5,call,sizeof(call)) || call[0]!=0xe8) return false;
+        if (!SafeCopyFrom(GameBuild::At(g_gameModuleBase, caller)-5,call,sizeof(call)) || call[0]!=0xe8) return false;
         memcpy(&displacement,call+1,4);
-        if (intptr_t(caller)+displacement!=0x17378b0) return false;
+        if (intptr_t(GameBuild::Rva(caller))+displacement!=intptr_t(GameBuild::Rva(0x17378b0))) return false;
     }
     for (const auto& hook:hooks)
-        if (!SafeCopyFrom(g_gameModuleBase+hook.rva,actual,hook.size) || memcmp(actual,hook.signature,hook.size)) return false;
+        if (!SafeCopyFrom(GameBuild::At(g_gameModuleBase, hook.rva),actual,hook.size) || !GameBuild::Matches(hook.rva,actual,hook.signature,hook.size)) return false;
     size_t created=0;
     for (const auto& hook:hooks)
     {
-        if (MH_CreateHook(reinterpret_cast<void*>(g_gameModuleBase+hook.rva),hook.replacement,hook.original)!=MH_OK) break;
+        if (MH_CreateHook(reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, hook.rva)),hook.replacement,hook.original)!=MH_OK) break;
         ++created;
     }
     bool enabled=created==std::size(hooks);
     if (enabled)
         for (const auto& hook:hooks)
-            if (MH_QueueEnableHook(reinterpret_cast<void*>(g_gameModuleBase+hook.rva))!=MH_OK) { enabled=false; break; }
+            if (MH_QueueEnableHook(reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, hook.rva)))!=MH_OK) { enabled=false; break; }
     if (enabled) enabled=MH_ApplyQueued()==MH_OK;
     if (!enabled)
     {
         for (size_t i=0;i<created;++i)
         {
-            MH_DisableHook(reinterpret_cast<void*>(g_gameModuleBase+hooks[i].rva));
-            MH_RemoveHook(reinterpret_cast<void*>(g_gameModuleBase+hooks[i].rva));
+            MH_DisableHook(reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, hooks[i].rva)));
+            MH_RemoveHook(reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, hooks[i].rva)));
         }
         return false;
     }
-    g_cpuTouch=reinterpret_cast<CpuTouchFn>(g_gameModuleBase+0x173efc0);
-    g_cpuPaletteTouch=reinterpret_cast<CpuTouchFn>(g_gameModuleBase+0x173ec50);
-    g_cpuWheelTouch=reinterpret_cast<CpuTouchFn>(g_gameModuleBase+0x174efa0);
+    g_cpuTouch=reinterpret_cast<CpuTouchFn>(GameBuild::At(g_gameModuleBase, 0x173efc0));
+    g_cpuPaletteTouch=reinterpret_cast<CpuTouchFn>(GameBuild::At(g_gameModuleBase, 0x173ec50));
+    g_cpuWheelTouch=reinterpret_cast<CpuTouchFn>(GameBuild::At(g_gameModuleBase, 0x174efa0));
     g_cpuInterpolationHooksInstalled.store(true,std::memory_order_release);
     return true;
 }

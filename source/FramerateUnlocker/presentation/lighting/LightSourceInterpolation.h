@@ -118,9 +118,9 @@ static bool SupportedCaller(uintptr_t caller, unsigned kind)
 {
     // Kind-4 captures and native dispatch verify this sphere-builder caller.
     // Other consumer paths must not borrow its layout without verification.
-    if (kind==4) return caller==g_gameModuleBase+0x169a4e1;
-    if (caller == g_gameModuleBase+kCallerRva) return kind==1 || kind==2 || kind==3 || kind==5;
-    return (kind==1 || kind==3) && (caller==g_gameModuleBase+0x169a4e1 || caller==g_gameModuleBase+0x169a74a);
+    if (kind==4) return caller==GameBuild::At(g_gameModuleBase, 0x169a4e1);
+    if (caller == GameBuild::At(g_gameModuleBase, kCallerRva)) return kind==1 || kind==2 || kind==3 || kind==5;
+    return (kind==1 || kind==3) && (caller==GameBuild::At(g_gameModuleBase, 0x169a4e1) || caller==GameBuild::At(g_gameModuleBase, 0x169a74a));
 }
 
 // Caller holds g_presentationLock. Only CPU publication can finalize light endpoints.
@@ -184,7 +184,7 @@ static bool Prepare(uintptr_t context, uintptr_t camera, uintptr_t position, uin
         !SafeCopyFrom(camera, &view, sizeof(view)) || !NativeCameraPoseValid(view) ||
         !SafeRead(camera + 0x48, &projection) || projection != 0) return false;
     memcpy(identity, copy, sizeof(identity));
-    if (identity[0] != g_gameModuleBase + kSourceVtableRva) return false;
+    if (identity[0] != GameBuild::At(g_gameModuleBase, kSourceVtableRva)) return false;
     if (sphere)
     {
         if (!DecodePoint(rawPosition,world)) return false;

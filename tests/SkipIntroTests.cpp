@@ -7,8 +7,10 @@ namespace FramerateMenu = NativeGfx;
 #include "native/plugins/BootStateHookTests.h"
 #include "native/plugins/IntroSkipTests.h"
 #include "native/plugins/IntroScreenTests.h"
+#include "SkipIntroStartupTests.h"
 int main()
 {
+    SkipIntroStartupRegression::Run();
     BootStateHookRegression::Run();
     IntroSkipRegression::Run();
     IntroScreenRegression::Run();

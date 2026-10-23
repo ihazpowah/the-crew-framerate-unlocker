@@ -10,7 +10,7 @@ static uintptr_t AlignUp(uintptr_t value, uintptr_t alignment)
 
 static uintptr_t AllocateNear(uintptr_t moduleBase)
 {
-    uintptr_t search = AlignUp(moduleBase + kExpectedImageSize, 0x10000);
+    uintptr_t search = AlignUp(moduleBase + GameBuild::ImageSize(), 0x10000);
     uintptr_t maximum = moduleBase + 0x70000000ull;
 
     while (search < maximum)
@@ -307,7 +307,7 @@ static std::vector<uint8_t> BuildCpuTransformSourceStub(uintptr_t stub, uintptr_
     { Add(bytes,regs[reg][0],0x8b,regs[reg][2],0x24); AddInt32(bytes,0x80+reg*8); }
     Add(bytes,0x48,0x8b,0x84,0x24); AddInt32(bytes,0xb0);
     Add(bytes,0x48,0x81,0xc4); AddInt32(bytes,0xc8); Add(bytes,0x9d);
-    AddRelativeBranch(bytes,stub,moduleBase+resumeRva,0xe9);
+    AddRelativeBranch(bytes,stub,GameBuild::At(moduleBase, resumeRva),0xe9);
     return bytes;
 }
 static std::vector<uint8_t> BuildCpuPaletteSourceStub(uintptr_t stub,uintptr_t moduleBase,
@@ -321,8 +321,8 @@ static std::vector<uint8_t> BuildCameraPacketStub(uintptr_t stub, uintptr_t modu
     uintptr_t helper = reinterpret_cast<uintptr_t>(&CaptureNativeCameraPacket))
 {
     std::vector<uint8_t> bytes;
-    AddNativePipelineGate(bytes, stub, moduleBase + CameraPacketResumeRva,
-        moduleBase + CameraPacketLeaTargetRva);
+    AddNativePipelineGate(bytes, stub, GameBuild::At(moduleBase, CameraPacketResumeRva),
+        GameBuild::At(moduleBase, CameraPacketLeaTargetRva));
     // Entry is mid-function with RSP aligned to 16. After pushfq, reserve
     // 0xC8 so the helper call is aligned and has its own 32-byte home area.
     // Preserve ALL volatile registers: the original LEA clobbers only RCX.
@@ -353,8 +353,8 @@ static std::vector<uint8_t> BuildCameraPacketStub(uintptr_t stub, uintptr_t modu
     Add(bytes, 0x48, 0x81, 0xc4);
     AddInt32(bytes, 0xC8);
     Add(bytes, 0x9d, 0x48, 0xb9);              // original LEA, flags unchanged
-    AddInt64(bytes, moduleBase + CameraPacketLeaTargetRva);
-    AddRelativeBranch(bytes, stub, moduleBase + CameraPacketResumeRva, 0xe9);
+    AddInt64(bytes, GameBuild::At(moduleBase, CameraPacketLeaTargetRva));
+    AddRelativeBranch(bytes, stub, GameBuild::At(moduleBase, CameraPacketResumeRva), 0xe9);
     return bytes;
 }
 } // namespace IntegratedController

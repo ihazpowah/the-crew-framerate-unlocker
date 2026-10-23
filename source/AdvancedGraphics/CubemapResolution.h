@@ -40,10 +40,10 @@ static bool ShouldScaleResource(uintptr_t returnAddress, uintptr_t name,
     const unsigned* desc)
 {
     if (!scope.owner || (scope.scale != 2 && scope.scale != 4) || !desc ||
-        returnAddress < g_gameModuleBase + kFrameRva || returnAddress >= g_gameModuleBase + 0x16b0380 ||
+        returnAddress < GameBuild::At(g_gameModuleBase, kFrameRva) || returnAddress >= GameBuild::At(g_gameModuleBase, 0x16b0380) ||
         desc[0] != 256 || desc[1] != 256) return false;
     for (const auto& target : targets)
-        if (name == g_gameModuleBase + target.nameRva) return true;
+        if (name == GameBuild::At(g_gameModuleBase, target.nameRva)) return true;
     return false;
 }
 static uintptr_t __fastcall Resource(uintptr_t pool, uintptr_t name, const unsigned* desc)
@@ -80,8 +80,8 @@ static uintptr_t __fastcall Frame(uintptr_t a, uintptr_t b, uintptr_t c, uintptr
 static bool Matches(uintptr_t rva, const uint8_t* expected, size_t count)
 {
     uint8_t actual[32]{};
-    return count <= sizeof(actual) && SafeCopyFrom(g_gameModuleBase + rva, actual, count) &&
-        memcmp(actual, expected, count) == 0;
+    return count <= sizeof(actual) && SafeCopyFrom(GameBuild::At(g_gameModuleBase, rva), actual, count) &&
+        GameBuild::Matches(rva, actual, expected, count);
 }
 static bool Install()
 {
@@ -102,8 +102,8 @@ static bool Install()
     for (const auto& target : targets)
         if (!Matches(target.nameRva, reinterpret_cast<const uint8_t*>(target.name),
             strlen(target.name) + 1)) return false;
-    void* addresses[] = {reinterpret_cast<void*>(g_gameModuleBase+kResourceRva),
-        reinterpret_cast<void*>(g_gameModuleBase+kSetupRva), reinterpret_cast<void*>(g_gameModuleBase+kFrameRva)};
+    void* addresses[] = {reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kResourceRva)),
+        reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kSetupRva)), reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kFrameRva))};
     void* detours[] = {reinterpret_cast<void*>(Resource), reinterpret_cast<void*>(Setup),
         reinterpret_cast<void*>(Frame)};
     void** originals[] = {reinterpret_cast<void**>(&originalResource),

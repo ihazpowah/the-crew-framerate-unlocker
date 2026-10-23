@@ -13,11 +13,19 @@ static bool __fastcall ApplySettingsHook(void*);
 static void __fastcall DiscardSettingsHook(void*);
 static void __fastcall RefreshSettingsHook(void*,bool);
 static void __fastcall PreviewSettingsHook(void*);
+static void BuildOptions();
+static void RefreshOptionsIfIdle()
+{
+    if (!g_insideEvent && g_staged.index<0) BuildOptions();
+}
 
 static bool SetVariableNative(void* movieOwner, const Value* value, const char* name)
 {
     if (strcmp(name, "aryVideoSettingFps") == 0)
     {
+        // Native menu rebuilds follow the window's current monitor. Keep row
+        // indices stable while a selection/preview transaction is pending.
+        RefreshOptionsIfIdle();
         Value array;
         const bool built = BuildArray(movieOwner, &array);
         const bool result = g_setVariable(movieOwner, built ? &array : value, name);
@@ -49,9 +57,9 @@ static bool __fastcall SetVariableHookBody(void* owner, const Value* value, cons
 static bool __fastcall LookupMemberHookBody(
     void* movieOwner, const char* path, Value* result, const Value* member, unsigned flags)
 {
-    const uintptr_t caller = NativeHookChain::Caller(g_gameModuleBase+kLookupMemberRva, uintptr_t(_ReturnAddress()));
+    const uintptr_t caller = NativeHookChain::Caller(GameBuild::At(g_gameModuleBase, kLookupMemberRva), uintptr_t(_ReturnAddress()));
     const bool ok = g_lookupMember(movieOwner,path,result,member,flags);
-    if (ok && g_insideEvent && caller == g_gameModuleBase + kFpsLookupReturnRva &&
+    if (ok && g_insideEvent && caller == GameBuild::At(g_gameModuleBase, kFpsLookupReturnRva) &&
         (result->type & 0x8f) == 5)
     {
         const double number = result->data.number;
@@ -179,10 +187,10 @@ static void PreviewCustomSettings(uintptr_t settings)
 
 static void __fastcall PreviewSettingsHookBody(void* settings)
 {
-    const uintptr_t caller = NativeHookChain::Caller(g_gameModuleBase+kPreviewSettingsRva,uintptr_t(_ReturnAddress()));
-    const bool menuCall = caller == g_gameModuleBase + kPreviewReturnRva ||
-        caller == g_gameModuleBase + kRejectPreviewReturnRva || caller == g_gameModuleBase + kClosePreviewReturnRva ||
-        caller == g_gameModuleBase + kButtonApplyReturnRva - 8;
+    const uintptr_t caller = NativeHookChain::Caller(GameBuild::At(g_gameModuleBase, kPreviewSettingsRva),uintptr_t(_ReturnAddress()));
+    const bool menuCall = caller == GameBuild::At(g_gameModuleBase, kPreviewReturnRva) ||
+        caller == GameBuild::At(g_gameModuleBase, kRejectPreviewReturnRva) || caller == GameBuild::At(g_gameModuleBase, kClosePreviewReturnRva) ||
+        caller == GameBuild::At(g_gameModuleBase, kButtonApplyReturnRva) - 8;
     g_nativeEvents.fetch_add(1, std::memory_order_acq_rel);
     g_previewSettings(settings);
     uintptr_t activeSettings = 0;
@@ -200,7 +208,7 @@ static void __fastcall PreviewSettingsHookBody(void* settings)
         g_nativeEvents.fetch_sub(1, std::memory_order_acq_rel);
         return;
     }
-    if (caller == g_gameModuleBase + kPreviewReturnRva)
+    if (caller == GameBuild::At(g_gameModuleBase, kPreviewReturnRva))
         PreviewCustomSettings(reinterpret_cast<uintptr_t>(settings));
     else
     {
@@ -231,8 +239,8 @@ static bool CommitStagedSelection(uintptr_t settings)
 
 static bool __fastcall ApplySettingsHookBody(void* settings)
 {
-    const uintptr_t caller = NativeHookChain::Caller(g_gameModuleBase+kApplySettingsRva,uintptr_t(_ReturnAddress()));
-    if (caller != g_gameModuleBase + kButtonApplyReturnRva && caller != g_gameModuleBase + kDialogApplyReturnRva)
+    const uintptr_t caller = NativeHookChain::Caller(GameBuild::At(g_gameModuleBase, kApplySettingsRva),uintptr_t(_ReturnAddress()));
+    if (caller != GameBuild::At(g_gameModuleBase, kButtonApplyReturnRva) && caller != GameBuild::At(g_gameModuleBase, kDialogApplyReturnRva))
         return g_applySettings(settings);
     g_nativeEvents.fetch_add(1, std::memory_order_acq_rel);
     SetPipelineTarget(60);
@@ -287,7 +295,7 @@ TheCrewFramerateUnlocker_CHAIN_WRAPPER(void, RefreshSettingsHook, kRefreshSettin
 TheCrewFramerateUnlocker_CHAIN_WRAPPER(void, PreviewSettingsHook, kPreviewSettingsRva, (void* a), (a))
 
 static bool Matches(uintptr_t rva,const uint8_t* bytes,size_t size)
-{ return NativeHookChain::Matches(g_gameModuleBase+rva,bytes,size); }
+{ return NativeHookChain::Matches(GameBuild::At(g_gameModuleBase, rva),bytes,size); }
 
 // Native 30/60, Windows rates at the current display resolution, then Unlimited.
 static void BuildOptions()
@@ -365,13 +373,13 @@ static bool Install()
     BuildOptions();
 
     void* targets[] = {
-        reinterpret_cast<void*>(g_gameModuleBase + kSetVariableRva),
-        reinterpret_cast<void*>(g_gameModuleBase + kLookupMemberRva),
-        reinterpret_cast<void*>(g_gameModuleBase + kSettingsEventRva),
-        reinterpret_cast<void*>(g_gameModuleBase + kApplySettingsRva),
-        reinterpret_cast<void*>(g_gameModuleBase + kDiscardSettingsRva),
-        reinterpret_cast<void*>(g_gameModuleBase + kRefreshSettingsRva),
-        reinterpret_cast<void*>(g_gameModuleBase + kPreviewSettingsRva)};
+        reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kSetVariableRva)),
+        reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kLookupMemberRva)),
+        reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kSettingsEventRva)),
+        reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kApplySettingsRva)),
+        reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kDiscardSettingsRva)),
+        reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kRefreshSettingsRva)),
+        reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, kPreviewSettingsRva))};
     void* hooks[] = {
         reinterpret_cast<void*>(&SetVariableHook),
         reinterpret_cast<void*>(&LookupMemberHook),

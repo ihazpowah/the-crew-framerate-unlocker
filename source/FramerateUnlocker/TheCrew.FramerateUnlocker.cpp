@@ -2,6 +2,7 @@
 // Internal state retains one translation unit; regression suites include this file.
 
 #include "runtime/Platform.h"
+#include "../shared/GameBuild.h"
 
 #include "presentation/InterpolationPolicy.h"
 #include "presentation/HistoryInactivity.h"

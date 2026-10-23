@@ -19,6 +19,7 @@
 #include <intrin.h>
 #include "MinHook.h"
 #include "../shared/NativeMemory.h"
+#include "../shared/GameBuild.h"
 #include "../shared/NativeHookChain.h"
 #include "../shared/MenuSettings.h"
 static HMODULE g_graphicsModule = nullptr;
@@ -44,8 +45,8 @@ static bool ResolveGraphicsManager()
     return SafeRead(g_gameModuleBase,&dos) && dos.e_magic == IMAGE_DOS_SIGNATURE && dos.e_lfanew > 0 &&
         SafeRead(g_gameModuleBase+dos.e_lfanew,&nt) && nt.Signature == IMAGE_NT_SIGNATURE &&
         nt.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64 &&
-        nt.OptionalHeader.SizeOfImage == 0x535a000 &&
-        SafeRead(g_gameModuleBase+0x2c98a40,&g_manager) && g_manager;
+        GameBuild::Select(nt.OptionalHeader.SizeOfImage, nt.FileHeader.TimeDateStamp) &&
+        SafeRead(GameBuild::At(g_gameModuleBase, 0x2c98a40),&g_manager) && g_manager;
 }
 }
 #include "ShadowMapResolution.h"

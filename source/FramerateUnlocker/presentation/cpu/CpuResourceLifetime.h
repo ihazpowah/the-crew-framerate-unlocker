@@ -9,7 +9,7 @@ static bool CpuVehicleActor(uintptr_t actor,uint64_t* identity=nullptr)
     // type getter is executed while traversing a potentially retired object.
     for (uintptr_t rva:{uintptr_t(0x204bff0),uintptr_t(0x20531f0),uintptr_t(0x209fce0),uintptr_t(0x2039680),
         uintptr_t(0x2088530),uintptr_t(0x2089c60),uintptr_t(0x2088780),uintptr_t(0x2039980)})
-        if (table==g_gameModuleBase+rva) { if (identity) *identity=id; return true; }
+        if (table==GameBuild::At(g_gameModuleBase, rva)) { if (identity) *identity=id; return true; }
     return false;
 }
 static VehicleLifetimeRecord* CpuRememberVehicle(uintptr_t actor,uint64_t id) // g_presentationLock
@@ -28,7 +28,7 @@ static void CpuBootstrapVehicles() // g_presentationLock, after producer join
 {
     uintptr_t manager=0, registry=0, sentinel=0, node=0;
     uint64_t count=0;
-    if (!ReadNonNullPointer(g_gameModuleBase+0x2c996b8,&manager) || !ReadNonNullPointer(manager+0x10,&registry) ||
+    if (!ReadNonNullPointer(GameBuild::At(g_gameModuleBase, 0x2c996b8),&manager) || !ReadNonNullPointer(manager+0x10,&registry) ||
         registry==g_cpuBootstrappedRegistry || !ReadNonNullPointer(registry+0xd8,&sentinel) ||
         !SafeRead(registry+0xe0,&count) || !ReadNonNullPointer(sentinel,&node)) return;
     const uintptr_t first=node;
@@ -44,7 +44,7 @@ static void CpuBootstrapVehicles() // g_presentationLock, after producer join
     }
     uintptr_t confirmManager=0,confirmRegistry=0,confirmSentinel=0,confirmFirst=0;
     uint64_t confirmCount=0;
-    if (!ReadNonNullPointer(g_gameModuleBase+0x2c996b8,&confirmManager) || confirmManager!=manager ||
+    if (!ReadNonNullPointer(GameBuild::At(g_gameModuleBase, 0x2c996b8),&confirmManager) || confirmManager!=manager ||
         !ReadNonNullPointer(manager+0x10,&confirmRegistry) || confirmRegistry!=registry ||
         !ReadNonNullPointer(registry+0xd8,&confirmSentinel) || confirmSentinel!=sentinel ||
         !ReadNonNullPointer(sentinel,&confirmFirst) || confirmFirst!=first ||
@@ -115,9 +115,9 @@ static void CpuPruneHistory(CpuHistoryStore<T>& histories,uintptr_t root,LONG64 
 }
 static void CpuPruneHistories(LONG64 tick,ULONGLONG now)
 {
-    CpuPruneHistory(g_cpuTransformHistory,g_gameModuleBase+0x26db030,tick,now);
-    CpuPruneHistory(g_cpuWheelHistory,g_gameModuleBase+CpuWheelRootRva,tick,now);
-    CpuPruneHistory(g_cpuPaletteHistory,g_gameModuleBase+CpuPaletteRootRva,tick,now);
+    CpuPruneHistory(g_cpuTransformHistory,GameBuild::At(g_gameModuleBase, 0x26db030),tick,now);
+    CpuPruneHistory(g_cpuWheelHistory,GameBuild::At(g_gameModuleBase, CpuWheelRootRva),tick,now);
+    CpuPruneHistory(g_cpuPaletteHistory,GameBuild::At(g_gameModuleBase, CpuPaletteRootRva),tick,now);
 }
 static uintptr_t CpuNextPublishedTable(uintptr_t root)
 {
@@ -128,10 +128,10 @@ static uintptr_t CpuNextPublishedTable(uintptr_t root)
 static bool CpuPublishedFrameMatches(const CpuPresentationSnapshot& frame)
 {
     uintptr_t transforms=0, camera=0, palettes=0, wheels=0;
-    return (frame.transforms.empty() || (ReadNonNullPointer(g_gameModuleBase+0x26db030+0x18,&transforms) && transforms==frame.transformTable)) &&
-        (frame.palettes.empty() || (ReadNonNullPointer(g_gameModuleBase+CpuPaletteRootRva+0x18,&palettes) && palettes==frame.paletteTable)) &&
-        (!frame.camera.owner || (ReadNonNullPointer(g_gameModuleBase+NativeCameraResourceRootRva+0x18,&camera) && camera==frame.cameraTable)) &&
-        (frame.wheels.empty() || (ReadNonNullPointer(g_gameModuleBase+CpuWheelRootRva+0x18,&wheels) && wheels==frame.wheelTable));
+    return (frame.transforms.empty() || (ReadNonNullPointer(GameBuild::At(g_gameModuleBase, 0x26db030)+0x18,&transforms) && transforms==frame.transformTable)) &&
+        (frame.palettes.empty() || (ReadNonNullPointer(GameBuild::At(g_gameModuleBase, CpuPaletteRootRva)+0x18,&palettes) && palettes==frame.paletteTable)) &&
+        (!frame.camera.owner || (ReadNonNullPointer(GameBuild::At(g_gameModuleBase, NativeCameraResourceRootRva)+0x18,&camera) && camera==frame.cameraTable)) &&
+        (frame.wheels.empty() || (ReadNonNullPointer(GameBuild::At(g_gameModuleBase, CpuWheelRootRva)+0x18,&wheels) && wheels==frame.wheelTable));
 }
 static uintptr_t ReadSelectedVehiclePhysics()
 {

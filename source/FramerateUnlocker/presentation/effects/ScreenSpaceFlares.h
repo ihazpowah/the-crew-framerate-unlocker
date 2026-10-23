@@ -231,12 +231,12 @@ static bool InstallScreenSpaceFlareHooks()
     const uint8_t quadExpected[] = {0x48,0x89,0x5c,0x24,0x18,0x48,0x89,0x7c,0x24,0x20,0x55,0x41,0x54,0x41,0x56};
     const uint8_t vehicleExpected[] = {0x4c,0x8b,0xdc,0x48,0x81,0xec,0xf8,0,0,0};
     uint8_t quadActual[sizeof(quadExpected)], vehicleActual[sizeof(vehicleExpected)];
-    void* quad = reinterpret_cast<void*>(g_gameModuleBase + FlareQuadBuilderRva);
-    void* vehicle = reinterpret_cast<void*>(g_gameModuleBase + VehicleFlareBuilderRva);
+    void* quad = reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, FlareQuadBuilderRva));
+    void* vehicle = reinterpret_cast<void*>(GameBuild::At(g_gameModuleBase, VehicleFlareBuilderRva));
     if (!SafeCopyFrom(reinterpret_cast<uintptr_t>(quad), quadActual, sizeof(quadActual)) ||
-        memcmp(quadActual, quadExpected, sizeof(quadActual)) ||
+        !GameBuild::Matches(FlareQuadBuilderRva, quadActual, quadExpected, sizeof(quadActual)) ||
         !SafeCopyFrom(reinterpret_cast<uintptr_t>(vehicle), vehicleActual, sizeof(vehicleActual)) ||
-        memcmp(vehicleActual, vehicleExpected, sizeof(vehicleActual))) return false;
+        !GameBuild::Matches(VehicleFlareBuilderRva, vehicleActual, vehicleExpected, sizeof(vehicleActual))) return false;
     if (MH_CreateHook(quad, reinterpret_cast<void*>(&HookFlareQuad), reinterpret_cast<void**>(&g_originalFlareQuad)) != MH_OK)
         return false;
     if (MH_CreateHook(vehicle, reinterpret_cast<void*>(&HookVehicleFlare), reinterpret_cast<void**>(&g_originalVehicleFlare)) != MH_OK)

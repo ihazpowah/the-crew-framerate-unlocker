@@ -82,9 +82,9 @@ When a separately requested task requires launching the game:
 
 ## Settings
 
-The FPS menu offers native 30, native 60, unique Windows primary-display refresh rates above 60 and below 1000 supported at the current Windows resolution in ascending order, then Unlimited, using the existing 1000 FPS cap. Unlimited retains that software cap with VSync enabled and leaves presentation pacing to native VSync. Interpolation activation still uses the primary display refresh ceiling. Native 30/60 and the displayed selection are preserved.
+The FPS menu offers native 30, native 60, unique game-window monitor refresh rates above 60 and below 1000 supported at that monitor's current Windows resolution in ascending order, then Unlimited, using the existing 1000 FPS cap. Unlimited retains that software cap with VSync enabled and leaves presentation pacing to native VSync. Interpolation activation uses the game monitor's refresh ceiling. Native 30/60 and the displayed selection are preserved.
 
-Menu display queries use DXGI for primary-output selection, the current desktop mode and available mode timings. Rates are rounded to the nearest whole FPS before deduplication, so 119.88 and 120 share one 120 option. The current mode must match the output's desktop bounds; current and enumerated dimensions are normalized for rotation. This does not change the Windows display mode.
+The game's own visible unowned window selects its monitor, including while unfocused; the matching DXGI output supplies the desktop mode and available timings. The VSync ceiling follows monitor moves, with cached mode queries refreshed twice per second or immediately after a monitor change. Menu rebuilds refresh available rates while keeping pending selection indices stable. Rates are rounded to the nearest whole FPS before deduplication, so 119.88 and 120 share one 120 option. The current mode must match the output's desktop bounds; current and enumerated dimensions are normalized for rotation. Missing windows/outputs never fall back to the primary display. This does not change the Windows display mode.
 
 Apply stores the selection in TheCrew.FramerateUnlocker.dat beside the ASI. Legacy FPS-only DAT files remain readable and upgrade on save without changing the stored FPS. The framerate plugin requires no INI.
 

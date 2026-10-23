@@ -61,7 +61,7 @@ static bool NewArray(void* owner, Value* array)
     uintptr_t root = 0;
     if (!SafeRead(reinterpret_cast<uintptr_t>(owner) + 0x78, &root) || !root) return false;
     using Fn = void(__fastcall*)(void*, Value*);
-    reinterpret_cast<Fn>(g_gameModuleBase + 0xfc8170)(reinterpret_cast<void*>(root), array);
+    reinterpret_cast<Fn>(GameBuild::At(g_gameModuleBase, 0xfc8170))(reinterpret_cast<void*>(root), array);
     return (array->type & 0x8f) == 9 && array->interfacePtr && array->data.object;
 }
 static bool NewObject(void* owner, Value* object)
@@ -69,7 +69,7 @@ static bool NewObject(void* owner, Value* object)
     uintptr_t root = 0;
     if (!SafeRead(reinterpret_cast<uintptr_t>(owner) + 0x78, &root) || !root) return false;
     using Fn = void(__fastcall*)(void*, Value*, const char*, const Value*, unsigned);
-    reinterpret_cast<Fn>(g_gameModuleBase + 0xfc85a0)(reinterpret_cast<void*>(root), object, nullptr, nullptr, 0);
+    reinterpret_cast<Fn>(GameBuild::At(g_gameModuleBase, 0xfc85a0))(reinterpret_cast<void*>(root), object, nullptr, nullptr, 0);
     return (object->type & 0x8f) == 8 && object->interfacePtr && object->data.object;
 }
 static bool MemberText(Value* object, const char* name, const char* text)

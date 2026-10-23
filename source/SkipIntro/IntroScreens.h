@@ -23,7 +23,7 @@ constexpr const char* kIndex="_root.CurNumScreen";
 static bool Match(uintptr_t rva,const uint8_t* bytes,size_t size)
 {
     uint8_t actual[16]{};
-    return size<=sizeof(actual) && SafeCopyFrom(image+rva,actual,size) && !memcmp(actual,bytes,size);
+    return size<=sizeof(actual) && SafeCopyFrom(GameBuild::At(image, rva),actual,size) && GameBuild::Matches(rva,actual,bytes,size);
 }
 static void Initialize()
 {
@@ -34,8 +34,8 @@ static void Initialize()
     if(!Match(0x76ad50,getBytes,sizeof(getBytes)) || !Match(0x776aa0,setBytes,sizeof(setBytes)) ||
        !Match(0x76e160,invokeBytes,sizeof(invokeBytes)) || !Match(0xfc8170,createBytes,sizeof(createBytes)))
     { outcome.store(Unavailable); return; }
-    get=reinterpret_cast<Get>(image+0x76ad50); set=reinterpret_cast<Set>(image+0x776aa0);
-    invoke=reinterpret_cast<Invoke>(image+0x76e160); create=reinterpret_cast<CreateArray>(image+0xfc8170);
+    get=reinterpret_cast<Get>(GameBuild::At(image, 0x76ad50)); set=reinterpret_cast<Set>(GameBuild::At(image, 0x776aa0));
+    invoke=reinterpret_cast<Invoke>(GameBuild::At(image, 0x76e160)); create=reinterpret_cast<CreateArray>(GameBuild::At(image, 0xfc8170));
 }
 static bool NumberIs(const Value& value,double number)
 { return (value.type&0x8f)==5 && value.data.number==number; }
@@ -130,7 +130,7 @@ static unsigned Apply(void* movie,uintptr_t root)
 static void AfterUpdate(uintptr_t owner,uintptr_t caller,unsigned before)
 {
     if(!get || !set || !invoke || !create || tried.load(std::memory_order_acquire) ||
-        owner!=boundOwner.load(std::memory_order_acquire) || caller!=image+0x16dadc || (before!=3 && before!=4)) return;
+        owner!=boundOwner.load(std::memory_order_acquire) || caller!=GameBuild::At(image, 0x16dadc) || (before!=3 && before!=4)) return;
     unsigned state=0,pending=0; uint8_t transition=0,loaded=0,ready=0; uintptr_t movie=0,root=0;
     // An unfocused launch can defer GFx queue initialization beyond the 3 -> 4
     // transition. Retry on the native caller while state 4 retains the original

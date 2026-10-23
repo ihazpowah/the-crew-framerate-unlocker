@@ -17,10 +17,13 @@ static std::atomic<uintptr_t> boundOwner{0};
 static std::atomic<unsigned> attempted{0}, thread{0};
 static std::atomic_flag seeking=ATOMIC_FLAG_INIT;
 struct Candidate { uintptr_t sequence=0,movie=0,bink=0; unsigned index=0,frames=0,frame=0; };
-static void Initialize()
+static bool Initialize(uintptr_t base)
 {
-    image=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+    // Select the executable before resolving any build-specific GFx addresses.
+    if (!ValidateMainModule(base)) return false;
+    image=base;
     Screens::Initialize();
+    return true;
 }
 static void Resolve()
 {
@@ -67,7 +70,7 @@ static void BeforeUpdate(uintptr_t owner,uintptr_t caller)
 {
     const Goto fn=seek.load(std::memory_order_acquire);
     if (!fn || owner!=boundOwner.load(std::memory_order_acquire) ||
-        caller!=image+0x16dadc || seeking.test_and_set(std::memory_order_acquire)) return;
+        caller!=GameBuild::At(image, 0x16dadc) || seeking.test_and_set(std::memory_order_acquire)) return;
     __try
     {
         Candidate c{};

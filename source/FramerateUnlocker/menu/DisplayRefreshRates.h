@@ -2,18 +2,68 @@
 #include <algorithm>
 #include <cstdint>
 #include <vector>
+#include <atomic>
+#include <mutex>
 #include <dxgi.h>
 #include <wrl/client.h>
 
 namespace IntegratedController::DisplayModes
 {
-static bool IsPrimaryOutput(const DXGI_OUTPUT_DESC& desc)
+struct WindowApi
 {
-    // The primary desktop output starts at the desktop origin. Using DXGI's
-    // coordinates avoids a separate Win32 monitor-selection query.
-    return desc.AttachedToDesktop && desc.DesktopCoordinates.left==0 &&
-        desc.DesktopCoordinates.top==0 && desc.DesktopCoordinates.right>0 &&
-        desc.DesktopCoordinates.bottom>0;
+    decltype(&GetCurrentProcessId) processId=&GetCurrentProcessId;
+    decltype(&GetWindowThreadProcessId) windowProcess=&GetWindowThreadProcessId;
+    decltype(&GetForegroundWindow) foreground=&GetForegroundWindow;
+    decltype(&IsWindow) exists=&IsWindow;
+    decltype(&IsWindowVisible) visible=&IsWindowVisible;
+    decltype(&GetWindow) relative=&GetWindow;
+    decltype(&GetClientRect) clientRect=&GetClientRect;
+    decltype(&EnumWindows) enumerate=&EnumWindows;
+    decltype(&MonitorFromWindow) monitor=&MonitorFromWindow;
+};
+static WindowApi windowApi;
+static std::atomic<HWND> gameWindow{nullptr};
+static uint64_t GameWindowArea(HWND window)
+{
+    DWORD process=0; RECT client{};
+    if (!window || !windowApi.exists(window) || !windowApi.visible(window) ||
+        windowApi.relative(window,GW_OWNER) || !windowApi.windowProcess(window,&process) ||
+        process!=windowApi.processId() || !windowApi.clientRect(window,&client)) return 0;
+    const int64_t width=int64_t(client.right)-client.left, height=int64_t(client.bottom)-client.top;
+    return width>0 && height>0 ? uint64_t(width)*uint64_t(height) : 0;
+}
+struct WindowSearch { HWND window=nullptr; uint64_t area=0; };
+static BOOL CALLBACK FindGameWindowCallback(HWND window,LPARAM parameter)
+{
+    auto& search=*reinterpret_cast<WindowSearch*>(parameter);
+    const uint64_t area=GameWindowArea(window);
+    if (area>search.area) { search.window=window; search.area=area; }
+    return TRUE;
+}
+static HMONITOR FindGameMonitor()
+{
+    HWND window=windowApi.foreground();
+    if (!GameWindowArea(window))
+    {
+        window=gameWindow.load();
+        if (!GameWindowArea(window))
+        {
+            WindowSearch search;
+            if (!windowApi.enumerate(FindGameWindowCallback,reinterpret_cast<LPARAM>(&search))) return nullptr;
+            window=search.window;
+        }
+    }
+    gameWindow.store(window);
+    // Foreground applications from other processes never select our monitor.
+    // Windows uses the largest intersecting area, or the pre-minimize bounds.
+    return window ? windowApi.monitor(window,MONITOR_DEFAULTTONEAREST) : nullptr;
+}
+static auto g_findGameMonitor=&FindGameMonitor;
+static bool IsSelectedOutput(const DXGI_OUTPUT_DESC& desc,HMONITOR monitor)
+{
+    return monitor && desc.Monitor==monitor && desc.AttachedToDesktop &&
+        desc.DesktopCoordinates.right>desc.DesktopCoordinates.left &&
+        desc.DesktopCoordinates.bottom>desc.DesktopCoordinates.top;
 }
 static void OrientMode(const DXGI_OUTPUT_DESC& desc,DXGI_MODE_DESC* mode)
 {
@@ -22,11 +72,13 @@ static void OrientMode(const DXGI_OUTPUT_DESC& desc,DXGI_MODE_DESC* mode)
 }
 static bool MatchesDesktopResolution(const DXGI_OUTPUT_DESC& desc,const DXGI_MODE_DESC& mode)
 {
-    return IsPrimaryOutput(desc) && mode.Width==static_cast<UINT>(desc.DesktopCoordinates.right) &&
-        mode.Height==static_cast<UINT>(desc.DesktopCoordinates.bottom);
+    return IsSelectedOutput(desc,desc.Monitor) &&
+        mode.Width==static_cast<UINT>(int64_t(desc.DesktopCoordinates.right)-desc.DesktopCoordinates.left) &&
+        mode.Height==static_cast<UINT>(int64_t(desc.DesktopCoordinates.bottom)-desc.DesktopCoordinates.top);
 }
-static bool FindPrimaryOutput(Microsoft::WRL::ComPtr<IDXGIOutput>* selected,DXGI_OUTPUT_DESC* selectedDesc)
+static bool FindMonitorOutput(HMONITOR monitor,Microsoft::WRL::ComPtr<IDXGIOutput>* selected,DXGI_OUTPUT_DESC* selectedDesc)
 {
+    if (!monitor) return false;
     using Microsoft::WRL::ComPtr;
     ComPtr<IDXGIFactory1> factory;
     if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(factory.GetAddressOf())))) return false;
@@ -39,7 +91,7 @@ static bool FindPrimaryOutput(Microsoft::WRL::ComPtr<IDXGIOutput>* selected,DXGI
             ComPtr<IDXGIOutput> output;
             if (FAILED(adapter->EnumOutputs(outputIndex,output.GetAddressOf()))) break;
             DXGI_OUTPUT_DESC desc{};
-            if (FAILED(output->GetDesc(&desc)) || !IsPrimaryOutput(desc)) continue;
+            if (FAILED(output->GetDesc(&desc)) || !IsSelectedOutput(desc,monitor)) continue;
             *selected=output;
             *selectedDesc=desc;
             return true;
@@ -51,17 +103,17 @@ static DXGI_MODE_DESC DesktopModeRequest(const DXGI_OUTPUT_DESC& desc)
 {
     DXGI_MODE_DESC preferred{};
     preferred.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
-    preferred.Width=static_cast<UINT>(desc.DesktopCoordinates.right-desc.DesktopCoordinates.left);
-    preferred.Height=static_cast<UINT>(desc.DesktopCoordinates.bottom-desc.DesktopCoordinates.top);
+    preferred.Width=static_cast<UINT>(int64_t(desc.DesktopCoordinates.right)-desc.DesktopCoordinates.left);
+    preferred.Height=static_cast<UINT>(int64_t(desc.DesktopCoordinates.bottom)-desc.DesktopCoordinates.top);
     // DXGI mode dimensions precede the output's desktop rotation.
     OrientMode(desc,&preferred);
     return preferred;
 }
-static bool ReadCurrentDisplay(DXGI_MODE_DESC* mode)
+static bool ReadMonitorMode(HMONITOR monitor,DXGI_MODE_DESC* mode)
 {
     Microsoft::WRL::ComPtr<IDXGIOutput> output;
     DXGI_OUTPUT_DESC desc{};
-    if (!FindPrimaryOutput(&output,&desc)) return false;
+    if (!FindMonitorOutput(monitor,&output,&desc)) return false;
     // An unconstrained closest-mode query can choose a scaled resolution.
     // Request the desktop dimensions explicitly, leaving refresh unspecified.
     const DXGI_MODE_DESC preferred=DesktopModeRequest(desc);
@@ -72,6 +124,35 @@ static bool ReadCurrentDisplay(DXGI_MODE_DESC* mode)
     *mode=current;
     return true;
 }
+static auto g_readMonitorMode=&ReadMonitorMode;
+static auto g_displayClock=&GetTickCount64;
+struct ModeCache
+{
+    HMONITOR monitor=nullptr;
+    DXGI_MODE_DESC mode{};
+    ULONGLONG checked=0;
+    bool sampled=false, valid=false;
+};
+static ModeCache modeCache;
+static std::mutex modeCacheMutex;
+static thread_local HMONITOR modeListMonitor=nullptr;
+static bool ReadCurrentDisplay(DXGI_MODE_DESC* mode)
+{
+    const HMONITOR monitor=g_findGameMonitor();
+    const ULONGLONG now=g_displayClock();
+    std::lock_guard<std::mutex> lock(modeCacheMutex);
+    // The controller polls every 10 ms. Requery DXGI at most twice per second
+    // on one monitor; moving to a different monitor invalidates it immediately.
+    if (!modeCache.sampled || modeCache.monitor!=monitor || now-modeCache.checked>=500)
+    {
+        modeCache.monitor=monitor; modeCache.checked=now; modeCache.sampled=true;
+        modeCache.valid=monitor && g_readMonitorMode(monitor,&modeCache.mode);
+    }
+    modeListMonitor=modeCache.valid ? monitor : nullptr;
+    if (!modeCache.valid) return false;
+    *mode=modeCache.mode;
+    return true;
+}
 static auto g_readCurrentDisplay=&ReadCurrentDisplay;
 
 static bool ReadDisplayModes(std::vector<DXGI_MODE_DESC>* modes)
@@ -79,7 +160,9 @@ static bool ReadDisplayModes(std::vector<DXGI_MODE_DESC>* modes)
     modes->clear();
     Microsoft::WRL::ComPtr<IDXGIOutput> output;
     DXGI_OUTPUT_DESC desc{};
-    if (!FindPrimaryOutput(&output,&desc)) return false;
+    // BuildOptions reads the current mode immediately before this list. Keep
+    // both reads on that same monitor even if the window moves between calls.
+    if (!FindMonitorOutput(modeListMonitor,&output,&desc)) return false;
     // Scaling modes are valid too; dimensions are filtered by the caller.
     for (unsigned attempt=0;attempt<3;++attempt)
     {

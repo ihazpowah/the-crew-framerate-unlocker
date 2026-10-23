@@ -145,23 +145,23 @@ static void CaptureCpuFrame()
         {
             if (binding.wheel)
             {
-                if (!g_cpuWheelTouch || !CpuResource(g_gameModuleBase+CpuWheelRootRva,binding.transform,true)) continue;
+                if (!g_cpuWheelTouch || !CpuResource(GameBuild::At(g_gameModuleBase, CpuWheelRootRva),binding.transform,true)) continue;
                 uint64_t handle=binding.transform;
-                const uintptr_t source=g_cpuWheelTouch(g_gameModuleBase+CpuWheelRootRva,&handle,true);
+                const uintptr_t source=g_cpuWheelTouch(GameBuild::At(g_gameModuleBase, CpuWheelRootRva),&handle,true);
                 CpuWheelSample sample; sample.handle=handle; sample.poseIdentity=binding.poseIdentity; sample.owner=binding.lifetime;
                 if (source && SafeCopyFrom(source,&sample.native,sizeof(sample.native)))
                     frame->wheels.push_back(sample);
                 continue;
             }
-            const uintptr_t packet=CpuResource(g_gameModuleBase+0x26da1c0,binding.packet,true);
+            const uintptr_t packet=CpuResource(GameBuild::At(g_gameModuleBase, 0x26da1c0),binding.packet,true);
             uint64_t transform=0;
             if (!packet || !SafeRead(packet+0x18,&transform) || transform!=binding.transform ||
-                !CpuResource(g_gameModuleBase+0x26db030,transform,true)) continue;
+                !CpuResource(GameBuild::At(g_gameModuleBase, 0x26db030),transform,true)) continue;
             CaptureCpuPalette(packet,binding.poseIdentity,*frame,binding.lifetime);
             // Native first-write COW touch guarantees an observer refresh even on
             // zero-substep renders. It preserves native bytes and deduplicates
             // an already queued native write; no manual writer replay is needed.
-            const uintptr_t source=g_cpuTouch(g_gameModuleBase+0x26db030,&transform,true);
+            const uintptr_t source=g_cpuTouch(GameBuild::At(g_gameModuleBase, 0x26db030),&transform,true);
             CpuTransformSample sample; sample.transform=transform; sample.poseIdentity=binding.poseIdentity; sample.owner=binding.lifetime;
             float world[16];
             if (source && SafeCopyFrom(source,&sample.native,sizeof(sample.native)) && NativeTransformToWorldMatrix(sample.native,world))
@@ -170,17 +170,17 @@ static void CaptureCpuFrame()
     }
     }
     uint64_t cameraHandle=0;
-    const uintptr_t packet=CpuResource(g_gameModuleBase+NativeCameraResourceRootRva,camera.handle,true);
+    const uintptr_t packet=CpuResource(GameBuild::At(g_gameModuleBase, NativeCameraResourceRootRva),camera.handle,true);
     if (camera.owner && packet && SafeRead(camera.owner+0x60,&cameraHandle) && cameraHandle==camera.handle &&
         (
          SafeCopyFrom(packet+0x10,&frame->nativeCamera,sizeof(NativeCameraPose))) && NativeCameraPoseValid(frame->nativeCamera))
         frame->camera=camera;
     // Capture the tables that the native publication is about to expose. A
     // previous renderer iteration must never latch a not-yet-swapped frame.
-    frame->transformTable=CpuNextPublishedTable(g_gameModuleBase+0x26db030);
-    frame->cameraTable=CpuNextPublishedTable(g_gameModuleBase+NativeCameraResourceRootRva);
-    frame->paletteTable=CpuNextPublishedTable(g_gameModuleBase+CpuPaletteRootRva);
-    frame->wheelTable=CpuNextPublishedTable(g_gameModuleBase+CpuWheelRootRva);
+    frame->transformTable=CpuNextPublishedTable(GameBuild::At(g_gameModuleBase, 0x26db030));
+    frame->cameraTable=CpuNextPublishedTable(GameBuild::At(g_gameModuleBase, NativeCameraResourceRootRva));
+    frame->paletteTable=CpuNextPublishedTable(GameBuild::At(g_gameModuleBase, CpuPaletteRootRva));
+    frame->wheelTable=CpuNextPublishedTable(GameBuild::At(g_gameModuleBase, CpuWheelRootRva));
     if (epoch!=g_cpuPresentationEpoch.load() || !CpuInterpolationEnabled() || !g_presentationActive.load()) return;
     if (std::fabs(g_cpuTickStepSeconds-stepSeconds)>1e-9) { g_cpuVehicleRootHistory.clear(); g_cpuTransformHistory.clear(); g_cpuPaletteHistory.clear(); g_cpuWheelHistory.clear(); g_cpuCameraHistory={}; }
     g_cpuTickStepSeconds=stepSeconds;

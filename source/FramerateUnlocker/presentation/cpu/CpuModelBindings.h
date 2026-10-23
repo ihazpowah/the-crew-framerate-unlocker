@@ -11,15 +11,15 @@ static bool CpuReadProp(uintptr_t component,PropLifetimeRecord* out,uint64_t* so
 {
     uintptr_t table=0,actorTable=0,actor=0,cached=0,binding=0,graphics=0,parent=0,self=0,parts=0,components=0;
     uint64_t id=~0ull; unsigned mode=~0u,count=0,componentCount=0;
-    if (!CpuDiscoveryPtr(component,&table) || table!=g_gameModuleBase+0x20459e0 ||
+    if (!CpuDiscoveryPtr(component,&table) || table!=GameBuild::At(g_gameModuleBase, 0x20459e0) ||
         !CpuDiscoveryPtr(component+0x18,&actor) || !CpuDiscoveryPtr(component+0xf8,&cached) || cached!=actor ||
-        !CpuDiscoveryPtr(actor,&actorTable) || (actorTable!=g_gameModuleBase+0x20aa870 && actorTable!=g_gameModuleBase+0x20baf60 &&
-            actorTable!=g_gameModuleBase+0x209ff40 && actorTable!=g_gameModuleBase+0x2114a90) ||
+        !CpuDiscoveryPtr(actor,&actorTable) || (actorTable!=GameBuild::At(g_gameModuleBase, 0x20aa870) && actorTable!=GameBuild::At(g_gameModuleBase, 0x20baf60) &&
+            actorTable!=GameBuild::At(g_gameModuleBase, 0x209ff40) && actorTable!=GameBuild::At(g_gameModuleBase, 0x2114a90)) ||
         !CpuDiscoveryRead(actor+8,&id) || id==~0ull ||
         !CpuDiscoveryRead(component+0x108,&mode) || mode!=0 ||
         !CpuDiscoveryRead(actor+0x188,&binding) ||
         !CpuDiscoveryPtr(actor+0x190,&graphics) || !CpuDiscoveryPtr(component+0x100,&cached) || cached!=graphics ||
-        !CpuDiscoveryPtr(graphics,&table) || table!=g_gameModuleBase+0x1ff24a0 ||
+        !CpuDiscoveryPtr(graphics,&table) || table!=GameBuild::At(g_gameModuleBase, 0x1ff24a0) ||
         !CpuDiscoveryPtr(graphics+0x18,&parent) || parent!=actor ||
         !CpuDiscoveryPtr(graphics+0x20,&cached) || cached!=actor ||
         !CpuDiscoveryRead(actor+0x100,&componentCount) || !CpuDiscoveryPtr(actor+0xf8,&components) ||
@@ -28,13 +28,13 @@ static bool CpuReadProp(uintptr_t component,PropLifetimeRecord* out,uint64_t* so
         !CpuDiscoverySpan(parts,count,0x30)) return false;
     if (binding)
     {
-        if (!CpuDiscoveryPtr(binding,&table) || table!=g_gameModuleBase+0x205db40 ||
+        if (!CpuDiscoveryPtr(binding,&table) || table!=GameBuild::At(g_gameModuleBase, 0x205db40) ||
             !CpuDiscoveryPtr(binding+0x18,&parent) || parent!=actor ||
             !CpuDiscoveryPtr(binding+0xa0,&self) || self!=actor || !CpuDiscoveryRead(binding+0xa8,&parent) || parent) return false;
     }
     // Native street lights/signs own physics and graphics directly without a
     // BindingComponent. Only the two audited concrete types admit this layout.
-    else if (actorTable!=g_gameModuleBase+0x209ff40 && actorTable!=g_gameModuleBase+0x2114a90) return false;
+    else if (actorTable!=GameBuild::At(g_gameModuleBase, 0x209ff40) && actorTable!=GameBuild::At(g_gameModuleBase, 0x2114a90)) return false;
     bool owned=false;
     for (unsigned i=0;i<componentCount;++i)
     { uintptr_t value=0; if (!CpuDiscoveryPtr(components+size_t(i)*8,&value)) return false; owned|=value==component; }
@@ -47,7 +47,7 @@ static bool CpuReadProp(uintptr_t component,PropLifetimeRecord* out,uint64_t* so
     for (unsigned i=0;i<count;++i)
     {
         uintptr_t wrapper=0,owner=0,body=0; uint32_t bone=0;
-        if (!CpuDiscoveryPtr(parts+size_t(i)*0x30,&wrapper) || !CpuDiscoveryPtr(wrapper,&table) || table!=g_gameModuleBase+0x21cd380 ||
+        if (!CpuDiscoveryPtr(parts+size_t(i)*0x30,&wrapper) || !CpuDiscoveryPtr(wrapper,&table) || table!=GameBuild::At(g_gameModuleBase, 0x21cd380) ||
             !CpuDiscoveryPtr(wrapper+0x50,&owner) || !CpuDiscoveryPtr(owner+0x300,&body) ||
             !CpuDiscoveryRead(parts+size_t(i)*0x30+8,&bone)) return false;
         mix(wrapper); mix(owner); mix(body); mix(bone);
@@ -66,26 +66,26 @@ static void CpuObserveProp(uintptr_t component) // g_presentationLock
     {
         uintptr_t table=0,actor=0,cached=0,actorTable=0,binding=0,parent=0,graphics=0;
         uint64_t id=~0ull;unsigned mode=~0u;
-        if(ReadNonNullPointer(component,&table) && table==g_gameModuleBase+0x20459e0 &&
+        if(ReadNonNullPointer(component,&table) && table==GameBuild::At(g_gameModuleBase, 0x20459e0) &&
             ReadNonNullPointer(component+0x18,&actor) && actor==known->second.actor &&
             ReadNonNullPointer(component+0xf8,&cached) && cached==actor &&
             SafeRead(actor+8,&id) && id==known->second.actorId &&
             SafeRead(component+0x108,&mode) && mode==0 && ReadNonNullPointer(actor,&actorTable) &&
-            (actorTable==g_gameModuleBase+0x20aa870 || actorTable==g_gameModuleBase+0x20baf60 ||
-                actorTable==g_gameModuleBase+0x209ff40 || actorTable==g_gameModuleBase+0x2114a90) &&
+            (actorTable==GameBuild::At(g_gameModuleBase, 0x20aa870) || actorTable==GameBuild::At(g_gameModuleBase, 0x20baf60) ||
+                actorTable==GameBuild::At(g_gameModuleBase, 0x209ff40) || actorTable==GameBuild::At(g_gameModuleBase, 0x2114a90)) &&
             ReadNonNullPointer(actor+0x190,&graphics) && ReadNonNullPointer(component+0x100,&cached) && cached==graphics &&
-            ReadNonNullPointer(graphics,&table) && table==g_gameModuleBase+0x1ff24a0 &&
+            ReadNonNullPointer(graphics,&table) && table==GameBuild::At(g_gameModuleBase, 0x1ff24a0) &&
             ReadNonNullPointer(graphics+0x18,&parent) && parent==actor &&
             ReadNonNullPointer(graphics+0x20,&cached) && cached==actor && SafeRead(actor+0x188,&binding))
         {
             if(binding)
             {
-                if(ReadNonNullPointer(binding,&table) && table==g_gameModuleBase+0x205db40 &&
+                if(ReadNonNullPointer(binding,&table) && table==GameBuild::At(g_gameModuleBase, 0x205db40) &&
                     ReadNonNullPointer(binding+0x18,&parent) && parent==actor &&
                     ReadNonNullPointer(binding+0xa0,&cached) && cached==actor &&
                     SafeRead(binding+0xa8,&parent) && !parent)return;
             }
-            else if(actorTable==g_gameModuleBase+0x209ff40 || actorTable==g_gameModuleBase+0x2114a90)return;
+            else if(actorTable==GameBuild::At(g_gameModuleBase, 0x209ff40) || actorTable==GameBuild::At(g_gameModuleBase, 0x2114a90))return;
         }
     }
     PropLifetimeRecord current;
@@ -189,7 +189,7 @@ static bool CpuAppendWheel(uintptr_t actor,std::vector<CpuModelBinding>& output)
     {
         uintptr_t component=0,table=0,parent=0,cached=0,owner=0; uint64_t handle=~0ull;
         if (!CpuDiscoveryPtr(components+size_t(i)*8,&component) || !CpuDiscoveryPtr(component,&table) ||
-            table!=g_gameModuleBase+0x2060110) continue;
+            table!=GameBuild::At(g_gameModuleBase, 0x2060110)) continue;
         if (!CpuDiscoveryPtr(component+0x18,&parent) || parent!=actor ||
             !CpuDiscoveryPtr(component+0x1c0,&cached) || cached!=actor ||
             !CpuDiscoveryPtr(component+0x30,&owner) || !CpuDiscoveryRead(owner+0x20,&handle)) continue;
@@ -206,12 +206,12 @@ static bool CpuAppendModel(uintptr_t model,std::vector<CpuModelBinding>& output,
     CpuArrayReadScope readable;
     if (admitted) *admitted=false;
     uintptr_t actorTable=0;
-    if (CpuDiscoveryPtr(model,&actorTable) && actorTable==g_gameModuleBase+0x210f820)
+    if (CpuDiscoveryPtr(model,&actorTable) && actorTable==GameBuild::At(g_gameModuleBase, 0x210f820))
     { if (admitted) *admitted=true; return CpuAppendWheel(model,output); }
     uintptr_t graphics=0, parent=0, cached=0, vtable=0, entries=0;
     uint64_t id=0; unsigned count=0;
     if (!CpuDiscoveryRead(model+8,&id) || id==~0ull || !CpuDiscoveryPtr(model+0x190,&graphics) ||
-        !CpuDiscoveryPtr(graphics,&vtable) || vtable!=g_gameModuleBase+0x1ff24a0 ||
+        !CpuDiscoveryPtr(graphics,&vtable) || vtable!=GameBuild::At(g_gameModuleBase, 0x1ff24a0) ||
         !CpuDiscoveryPtr(graphics+0x18,&parent) || !CpuDiscoveryPtr(graphics+0x20,&cached) ||
         parent!=model || cached!=model || !CpuDiscoveryRead(graphics+0x68,&count) ||
         (count && !CpuDiscoveryPtr(graphics+0x60,&entries)) || !CpuDiscoverySpan(entries,count,8)) return false;
@@ -246,7 +246,7 @@ static bool CpuAppendHierarchy(uintptr_t actor,std::vector<CpuModelBinding>& bin
         const auto node=nodes[n];
         uintptr_t binding=0, bindingTable=0, self=0, children=0; unsigned count=0;
         if (!CpuDiscoveryPtr(node+0x188,&binding) || !CpuDiscoveryPtr(binding,&bindingTable) ||
-            bindingTable!=g_gameModuleBase+0x205db40 || !CpuDiscoveryPtr(binding+0xa0,&self) || self!=node ||
+            bindingTable!=GameBuild::At(g_gameModuleBase, 0x205db40) || !CpuDiscoveryPtr(binding+0xa0,&self) || self!=node ||
             !CpuDiscoveryRead(binding+0xc0,&count) ||
             (count && !CpuDiscoveryPtr(binding+0xb8,&children)) || !CpuDiscoverySpan(children,count,8)) continue;
         for (unsigned i=0;i<count;++i)
@@ -254,7 +254,7 @@ static bool CpuAppendHierarchy(uintptr_t actor,std::vector<CpuModelBinding>& bin
             uintptr_t child=0, childBinding=0, childTable=0, childSelf=0, parent=0;
             if (!CpuDiscoveryPtr(children+size_t(i)*8,&child) ||
                 !CpuDiscoveryPtr(child+0x188,&childBinding) || !CpuDiscoveryPtr(childBinding,&childTable) ||
-                childTable!=g_gameModuleBase+0x205db40 || !CpuDiscoveryPtr(childBinding+0xa0,&childSelf) || childSelf!=child ||
+                childTable!=GameBuild::At(g_gameModuleBase, 0x205db40) || !CpuDiscoveryPtr(childBinding+0xa0,&childSelf) || childSelf!=child ||
                 !CpuDiscoveryPtr(childBinding+0xa8,&parent) || parent!=node) continue;
             if (!visited.emplace(child,true).second) continue;
             nodes.push_back(child);
@@ -271,15 +271,15 @@ static bool CpuModelBindings(const SelectedVehicleBinding& car,std::vector<CpuMo
     uint64_t modelId=0, confirm=0;
     if (!CpuDiscoveryPtr(car.actor+0x538,&puzzle) || !CpuDiscoveryPtr(puzzle+0x18,&puzzleParent) ||
         puzzleParent!=car.actor || !CpuDiscoveryPtr(puzzle,&table) ||
-        (table!=g_gameModuleBase+0x2044580 && table!=g_gameModuleBase+0x205d570 && table!=g_gameModuleBase+0x205eaa0) ||
-        !CpuDiscoveryPtr(table+0x138,&getter) || getter!=g_gameModuleBase+0x71b520 ||
+        (table!=GameBuild::At(g_gameModuleBase, 0x2044580) && table!=GameBuild::At(g_gameModuleBase, 0x205d570) && table!=GameBuild::At(g_gameModuleBase, 0x205eaa0)) ||
+        !CpuDiscoveryPtr(table+0x138,&getter) || getter!=GameBuild::At(g_gameModuleBase, 0x71b520) ||
         !CpuDiscoveryRead(puzzle+0x2158,&modelId) || !CpuDiscoveryPtr(puzzle+0x2160,&model) ||
         !CpuDiscoveryRead(model+8,&confirm) || confirm!=modelId || !CpuAppendModel(model,bindings)) return false;
     // These are the player's native child selections, not a world-wide scan.
     const uintptr_t lists[]={0x78,0x2910};
     for (uintptr_t offset:lists)
     {
-        if (offset==0x2910 && table!=g_gameModuleBase+0x205d570) continue;
+        if (offset==0x2910 && table!=GameBuild::At(g_gameModuleBase, 0x205d570)) continue;
         uintptr_t array=0; unsigned count=0;
         if (!CpuDiscoveryRead(puzzle+offset+8,&count) ||
             (count && !CpuDiscoveryPtr(puzzle+offset,&array)) || !CpuDiscoverySpan(array,count,0x18)) return false;

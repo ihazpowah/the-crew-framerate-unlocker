@@ -38,13 +38,13 @@ struct Registry
 static bool IsStateService(uintptr_t base, uintptr_t manager, uintptr_t service)
 {
     uintptr_t table=0, owner=0; char name[11]{};
-    return service && SafeRead(service,&table) && table==base+0x201b458 &&
+    return service && SafeRead(service,&table) && table==GameBuild::At(base, 0x201b458) &&
         SafeRead(service+0x10,&owner) && owner==manager &&
         SafeCopyFrom(service+0x18,name,sizeof(name)) && memcmp(name,"SvcGameFSM",sizeof(name))==0;
 }
 static bool ReadRegistry(uintptr_t base, Registry* r)
 {
-    if (!SafeRead(base+kManagerRva,&r->manager) || !r->manager) return false;
+    if (!SafeRead(GameBuild::At(base, kManagerRva),&r->manager) || !r->manager) return false;
     if (!SafeRead(r->manager+0x1f08,&r->services) || !r->services) return false;
     if (!SafeRead(r->manager+0x1f10,&r->count) || r->count != 57) return false;
     if (!SafeRead(r->manager+0x1f18,&r->indices) || !r->indices) return false;
@@ -59,7 +59,7 @@ static bool ReadRegistry(uintptr_t base, Registry* r)
     if (!r->service) return false;
     if (!SafeRead(r->service+0x58,&r->container) || !r->container) return false;
     uintptr_t managerAfter=0, servicesAfter=0;
-    if (!SafeRead(base+kManagerRva,&managerAfter) || managerAfter!=r->manager ||
+    if (!SafeRead(GameBuild::At(base, kManagerRva),&managerAfter) || managerAfter!=r->manager ||
         !SafeRead(r->manager+0x1f08,&servicesAfter) || servicesAfter!=r->services ||
         !IsStateService(base,r->manager,r->service)) return false;
     return true;
@@ -67,8 +67,8 @@ static bool ReadRegistry(uintptr_t base, Registry* r)
 static bool NativeTable(uintptr_t base)
 {
     uintptr_t entries[kEntryCount]{};
-    if (!SafeCopyFrom(base+kTableRva,entries,sizeof(entries))) return false;
-    for (unsigned i=0;i<kEntryCount;++i) if (entries[i] != base+kEntries[i]) return false;
+    if (!SafeCopyFrom(GameBuild::At(base, kTableRva),entries,sizeof(entries))) return false;
+    for (unsigned i=0;i<kEntryCount;++i) if (entries[i] != GameBuild::At(base, kEntries[i])) return false;
     return true;
 }
 // Reject unreadable, cyclic, oversized or ambiguous registries; no arbitrary heap scan.
@@ -100,7 +100,7 @@ static bool FindOwner(uintptr_t base, uintptr_t container, uintptr_t* result)
             !SafeRead(item.address+0x28,&state) || !state ||
             !SafeRead(state+0x38,&owner) || !SafeRead(state+0x20,&child)) return false;
         if (owner && (!SafeRead(owner,&table))) return false;
-        if (table == base+kTableRva)
+        if (table == GameBuild::At(base, kTableRva))
         {
             if (found && found != owner) return false;
             found = owner;
@@ -126,18 +126,18 @@ static bool TryInstall(uintptr_t base)
     if (first.manager!=second.manager || first.services!=second.services ||
         first.service!=second.service || first.container!=second.container ||
         !FindOwner(base,second.container,&checked) || checked!=owner) return false;
-    for (unsigned i=0;i<kEntryCount;++i) clone[i]=base+kEntries[i];
+    for (unsigned i=0;i<kEntryCount;++i) clone[i]=GameBuild::At(base, kEntries[i]);
     original=reinterpret_cast<Update>(clone[4]);
     clone[4]=reinterpret_cast<uintptr_t>(&Hook);
     // Publish initialized immutable clone before swapping only the aligned primary vptr.
     IntroSkip::boundOwner.store(owner,std::memory_order_release);
-    if (!ReplaceCallback(owner,base+kTableRva,reinterpret_cast<uintptr_t>(clone)))
+    if (!ReplaceCallback(owner,GameBuild::At(base, kTableRva),reinterpret_cast<uintptr_t>(clone)))
     { IntroSkip::boundOwner.store(0,std::memory_order_release); return false; }
     installedOwner=owner; return true;
 }
-static void Initialize()
+static void Initialize(uintptr_t base=reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr)))
 {
-    IntroSkip::Initialize();
+    if (!IntroSkip::Initialize(base)) { expired=true; return; }
     deadline=GetTickCount64()+30000;
 }
 static void Poll()

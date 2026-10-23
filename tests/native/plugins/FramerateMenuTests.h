@@ -97,18 +97,25 @@ static void __fastcall Preview(void*)
 static void Check()
 {
     DXGI_OUTPUT_DESC output{};
+    const HMONITOR selected=reinterpret_cast<HMONITOR>(uintptr_t(2));
+    output.Monitor=selected;
     output.AttachedToDesktop=TRUE;
     output.DesktopCoordinates={0,0,3840,2160};
-    assert(display::IsPrimaryOutput(output));
+    assert(display::IsSelectedOutput(output,selected));
+    assert(!display::IsSelectedOutput(output,reinterpret_cast<HMONITOR>(uintptr_t(1))));
+    assert(!display::IsSelectedOutput(output,nullptr));
     output.AttachedToDesktop=FALSE;
-    assert(!display::IsPrimaryOutput(output));
+    assert(!display::IsSelectedOutput(output,selected));
     output.AttachedToDesktop=TRUE;
     output.DesktopCoordinates={-3840,0,0,2160};
-    assert(!display::IsPrimaryOutput(output));
+    assert(display::IsSelectedOutput(output,selected));
+    DXGI_MODE_DESC negativeMode{}; negativeMode.Width=3840; negativeMode.Height=2160;
+    assert(display::MatchesDesktopResolution(output,negativeMode));
     output.DesktopCoordinates={0,2160,3840,4320};
-    assert(!display::IsPrimaryOutput(output));
+    assert(display::IsSelectedOutput(output,selected));
+    assert(display::MatchesDesktopResolution(output,negativeMode));
     output.DesktopCoordinates={0,0,0,2160};
-    assert(!display::IsPrimaryOutput(output));
+    assert(!display::IsSelectedOutput(output,selected));
     for(auto rotation : {DXGI_MODE_ROTATION_IDENTITY,DXGI_MODE_ROTATION_ROTATE90,
                         DXGI_MODE_ROTATION_ROTATE180,DXGI_MODE_ROTATION_ROTATE270})
     {
@@ -176,6 +183,22 @@ static void Check()
     }
     g_targetFps.store(300);
     assert(menu::IndexForTarget(object+8)==8);
+    // Reopening/rebuilding the FPS array can follow a different monitor, but
+    // cannot reinterpret an index already staged against the previous rows.
+    const auto monitorRates=availableRates;
+    const auto staged=menu::g_staged;
+    availableRates={180,240};
+    menu::g_staged={4,object+8,uintptr_t(settings)};
+    menu::RefreshOptionsIfIdle();
+    assert(menu::g_options.size()==std::size(expectedRates) && menu::g_options[4].fps==120);
+    menu::g_staged={}; menu::g_insideEvent=true;
+    menu::RefreshOptionsIfIdle();
+    assert(menu::g_options.size()==std::size(expectedRates));
+    menu::g_insideEvent=false;
+    menu::RefreshOptionsIfIdle();
+    assert(menu::g_options.size()==5 && menu::g_options[2].fps==180 && menu::g_options[3].fps==240);
+    assert(g_targetFps.load()==300); // Refreshing choices never changes the saved/runtime target.
+    menu::g_staged=staged; availableRates=monitorRates;
     displayModesAvailable=false;
     menu::BuildOptions();
     assert(menu::g_options.size()==3 && menu::g_options.back().fps==1000);
@@ -340,6 +363,22 @@ static void Check()
     *appliedSync = 1;
     assert(!GuardTargetFps() && *interval == 1.0f / 1000);
     assert(*appliedSync == 1 && g_vsyncRefreshCeiling.load() == 240);
+    // Moving between displays while VSync remains enabled replaces the old
+    // ceiling; the selection, software safety cap and saved DAT remain intact.
+    currentDisplayRate=60;
+    assert(!GuardTargetFps() && g_vsyncRefreshCeiling.load()==60 && !g_highFpsPresentationEnabled.load());
+    currentDisplayRate=144;
+    assert(!GuardTargetFps() && g_vsyncRefreshCeiling.load()==144 && g_highFpsPresentationEnabled.load());
+    assert(g_targetFps.load()==1000 && LoadMenuFps(menu::g_datPath)==1000);
+    currentDisplayRate=240;
+    assert(!GuardTargetFps() && g_vsyncRefreshCeiling.load()==240);
+    g_targetFps.store(240); currentDisplayRate=60;
+    *interval=1.0f/240;
+    assert(GuardTargetFps() && *interval==1.0f/60 && g_targetFps.load()==240);
+    currentDisplayRate=180;
+    assert(GuardTargetFps() && *interval==1.0f/180 && g_targetFps.load()==240);
+    g_targetFps.store(1000); currentDisplayRate=240;
+    assert(GuardTargetFps() && *interval==1.0f/1000);
     *rendererSlot = 0;
     assert(!GuardTargetFps() && g_vsyncRefreshCeiling.load() == 240);
     *rendererSlot = uintptr_t(renderer);
@@ -500,7 +539,7 @@ static void Check()
     menu::g_staged = {};
     assert(menu::g_nativeEvents.load() == 0);
     // Real refresh rows must Apply/persist independently of their dynamic index.
-    availableRates={{240000,3840,2160,1001},{119880,3840,2160,1000},75,144,120};
+    availableRates={{240000,3840,2160,1001},{119880,3840,2160,1000},75,144,120,180};
     menu::BuildOptions();
     g_vsyncRefreshCeiling.store(0);
     *reinterpret_cast<int*>(settings+0x4c)=0;

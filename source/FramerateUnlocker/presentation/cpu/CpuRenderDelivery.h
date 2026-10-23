@@ -212,7 +212,7 @@ static CpuReadFn g_cpuTransformReadOriginal=nullptr;
 static uintptr_t CpuNativeRead(uintptr_t root,const uint64_t* handle)
 {
     return (g_cpuTransformReadOriginal ? g_cpuTransformReadOriginal :
-        reinterpret_cast<CpuReadFn>(g_gameModuleBase+0x17378b0))(root,handle);
+        reinterpret_cast<CpuReadFn>(GameBuild::At(g_gameModuleBase, 0x17378b0)))(root,handle);
 }
 static uintptr_t CpuSelectTransform(uintptr_t root,const uint64_t* handle,uintptr_t native)
 {
@@ -220,7 +220,7 @@ static uintptr_t CpuSelectTransform(uintptr_t root,const uint64_t* handle,uintpt
     uint64_t value=0;
     if (!CpuFrameCurrent() ||
         !SafeRead(reinterpret_cast<uintptr_t>(handle),&value)) return native;
-    if (root==g_gameModuleBase+CpuWheelRootRva)
+    if (root==GameBuild::At(g_gameModuleBase, CpuWheelRootRva))
     {
         const auto found=g_renderCpuSnapshot->byWheel.find(value);
         if (found==g_renderCpuSnapshot->byWheel.end() || CpuResource(root,value,false)!=native) return native;
@@ -231,7 +231,7 @@ static uintptr_t CpuSelectTransform(uintptr_t root,const uint64_t* handle,uintpt
             return reinterpret_cast<uintptr_t>(&sample.presented);
         return native;
     }
-    if (root!=g_gameModuleBase+0x26db030) return native;
+    if (root!=GameBuild::At(g_gameModuleBase, 0x26db030)) return native;
     const auto found=g_renderCpuSnapshot->byTransform.find(value);
     if (found==g_renderCpuSnapshot->byTransform.end() || CpuResource(root,value,false)!=native) return native;
     const auto& sample=g_renderCpuSnapshot->transforms[found->second];
@@ -246,12 +246,12 @@ static uintptr_t CpuReadForWriter(uintptr_t root,const uint64_t* handle,uintptr_
     const uintptr_t native=CpuNativeRead(root,handle);
     // Audited synchronous copies only. Other resolver callers may retain the
     // native resource pointer, so they must never receive frame-owned memory.
-    switch (caller-g_gameModuleBase)
+    switch (GameBuild::Canonical(caller-g_gameModuleBase))
     {
     case 0x170039a: case 0x1700c4b: case 0x16f8170: case 0x16f8e3a: case 0x16dcfe1:
-        return root==g_gameModuleBase+0x26db030 ? CpuSelectTransform(root,handle,native) : native;
+        return root==GameBuild::At(g_gameModuleBase, 0x26db030) ? CpuSelectTransform(root,handle,native) : native;
     case 0x16a67b7:
-        return root==g_gameModuleBase+CpuWheelRootRva ? CpuSelectTransform(root,handle,native) : native;
+        return root==GameBuild::At(g_gameModuleBase, CpuWheelRootRva) ? CpuSelectTransform(root,handle,native) : native;
     default: return native;
     }
 }
@@ -260,14 +260,14 @@ static uintptr_t __fastcall CpuTransformReadHook(uintptr_t root,const uint64_t* 
 extern "C" uintptr_t WINAPI ResolveCpuTransformSource(uintptr_t root,const uint64_t* handle,uintptr_t outer)
 {
     const uintptr_t native=CpuNativeRead(root,handle);
-    return root==g_gameModuleBase+0x26db030 ? CpuSelectTransform(root,handle,native) : native;
+    return root==GameBuild::At(g_gameModuleBase, 0x26db030) ? CpuSelectTransform(root,handle,native) : native;
 }
 extern "C" uintptr_t WINAPI ResolveCpuPaletteSource(uintptr_t root,const uint64_t* handle,uintptr_t outer)
 {
 
     const uintptr_t native=CpuNativeRead(root,handle);
     uint64_t value=0;
-    if (!CpuFrameCurrent() || root!=g_gameModuleBase+CpuPaletteRootRva ||
+    if (!CpuFrameCurrent() || root!=GameBuild::At(g_gameModuleBase, CpuPaletteRootRva) ||
         !SafeRead(reinterpret_cast<uintptr_t>(handle),&value)) return native;
     const auto found=g_renderCpuSnapshot->byPalette.find(value);
     if (found==g_renderCpuSnapshot->byPalette.end() || CpuResource(root,value,false)!=native) return native;
@@ -291,7 +291,7 @@ static void CpuCameraBody(uintptr_t packet,uintptr_t camera,const float* viewpor
 {
     alignas(16) uint8_t copy[0x60];
     if (CpuFrameCurrent() && g_renderCpuSnapshot->camera.owner &&
-        CpuResource(g_gameModuleBase+NativeCameraResourceRootRva,g_renderCpuSnapshot->camera.handle,false)==packet &&
+        CpuResource(GameBuild::At(g_gameModuleBase, NativeCameraResourceRootRva),g_renderCpuSnapshot->camera.handle,false)==packet &&
         SafeCopyFrom(packet,copy,sizeof(copy)) &&
         memcmp(copy+0x10,&g_renderCpuSnapshot->nativeCamera,sizeof(NativeCameraPose))==0)
     {

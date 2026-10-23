@@ -1,4 +1,5 @@
 #pragma once
+#include "../../shared/GameBuild.h"
 
 // Automatic native minimap interpolation, independent of generic 3D routing.
 namespace NativeMinimap
@@ -52,7 +53,7 @@ static bool ReadMinimapVehicleSample(uintptr_t owner,uintptr_t service,uintptr_t
     if(!base || owner<0x180 || input!=owner-0x180+0xad0) return false;
     uintptr_t widget=0,manager=0,indices=0,table=0;
     if(!ptr(owner+0x8f8,widget) || widget!=owner-0x180 ||
-        !ptr(base+0x2c98a40,manager) || !ptr(manager+0x1f18,indices) || !ptr(manager+0x1f08,table)) return false;
+        !ptr(GameBuild::At(base, 0x2c98a40),manager) || !ptr(manager+0x1f18,indices) || !ptr(manager+0x1f08,table)) return false;
     const auto getService=[&](unsigned index,uintptr_t& result){unsigned char slot=0;
         return NativeRead(indices+index,&slot,1) && ptr(table+uintptr_t(slot)*8,result);};
     uintptr_t selected=0,camera=0,player=0,mapService=0,selection=0,overrideCamera=0;
@@ -64,15 +65,15 @@ static bool ReadMinimapVehicleSample(uintptr_t owner,uintptr_t service,uintptr_t
     uintptr_t entity=0,container=0,vtable=0,lookup=0,components=0,component=0,source=0,poseEntity=0,state=0;
     int type=0,slot=-1;unsigned char code[8]{};int displacement=0;
     if(!ptr(player+0x500,entity) || !ptr(entity+0x380,container) || !ptr(container,vtable) ||
-        !ptr(vtable+0x18,lookup) || lookup!=base+0x79e890 || !NativeRead(lookup,code,8) ||
+        !ptr(vtable+0x18,lookup) || lookup!=GameBuild::At(base, 0x79e890) || !NativeRead(lookup,code,8) ||
         code[0]!=0x48 || code[1]!=0x8d || code[2]!=0x05 || code[7]!=0xc3 ||
-        !NativeRead(base+0x30d9790,&type,4) || type<0 || type>1024) return false;
+        !NativeRead(GameBuild::At(base, 0x30d9790),&type,4) || type<0 || type>1024) return false;
     memcpy(&displacement,code+3,4);
     const uintptr_t slots=lookup+7+static_cast<intptr_t>(displacement);
     if(!NativeRead(slots+uintptr_t(type)*4,&slot,4) || slot<0 || slot>255 ||
         !ptr(container+0xf8,components) || !ptr(components+uintptr_t(slot)*8,component) ||
-        !ptr(component+0xe0,source) || !ptr(source,vtable) || vtable!=base+0x21cc4d0 ||
-        !ptr(source+0x50,poseEntity) || !ptr(poseEntity,vtable) || vtable!=base+0x21cfa70 ||
+        !ptr(component+0xe0,source) || !ptr(source,vtable) || vtable!=GameBuild::At(base, 0x21cc4d0) ||
+        !ptr(source+0x50,poseEntity) || !ptr(poseEntity,vtable) || vtable!=GameBuild::At(base, 0x21cfa70) ||
         !ptr(poseEntity+0x300,state)) return false;
     const auto generationAddress=g_frameClockGenerationAddress.load();
     const auto before=ReadMinimapClockProbe(generationAddress);
@@ -139,9 +140,9 @@ static void* ValidateTargetAt(uintptr_t base)
     const unsigned char expected[]={0x48,0x89,0x5c,0x24,0x20,0x56,0x57,0x41,0x56,0x48,0x81,0xec,0xe0,0,0,0};
     unsigned char bytes[sizeof(expected)]{};
     if(!base || base>UINTPTR_MAX-0x98bed0-sizeof(bytes) ||
-        !NativeRead(base+0x98bed0,bytes,sizeof(bytes)) || memcmp(bytes,expected,sizeof(bytes))) return nullptr;
+        !NativeRead(GameBuild::At(base, 0x98bed0),bytes,sizeof(bytes)) || !GameBuild::Matches(0x98bed0,bytes,expected,sizeof(bytes))) return nullptr;
     gameBase=base;
-    return reinterpret_cast<void*>(base+0x98bed0);
+    return reinterpret_cast<void*>(GameBuild::At(base, 0x98bed0));
 }
 static void* ValidatedTarget()
 { return ValidateTargetAt(reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr))); }

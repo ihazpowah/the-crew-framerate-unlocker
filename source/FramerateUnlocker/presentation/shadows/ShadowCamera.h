@@ -72,12 +72,12 @@ static bool InstallShadowCameraHook()
         0x55, 0x53, 0x57, 0x48, 0x8d, 0xa8, 0x38, 0xf4, 0xff, 0xff};
     const uint8_t finalizeExpected[] = {0x48, 0x8b, 0xc4, 0x48, 0x89, 0x58, 0x18,
         0x48, 0x89, 0x78, 0x20, 0x55};
-    const uintptr_t target = g_gameModuleBase + ShadowBuilderRva;
+    const uintptr_t target = GameBuild::At(g_gameModuleBase, ShadowBuilderRva);
     uint8_t finalizeActual[sizeof(finalizeExpected)];
     if (!NativeHookChain::Matches(target, expected, sizeof(expected)) ||
-        ((!SafeCopyFrom(g_gameModuleBase + CameraFinalizeRva, finalizeActual, sizeof(finalizeActual)) ||
-        memcmp(finalizeActual, finalizeExpected, sizeof(finalizeActual))))) return false;
-    g_finalizeShadowCamera = reinterpret_cast<CameraFinalizeFn>(g_gameModuleBase + CameraFinalizeRva);
+        ((!SafeCopyFrom(GameBuild::At(g_gameModuleBase, CameraFinalizeRva), finalizeActual, sizeof(finalizeActual)) ||
+        !GameBuild::Matches(CameraFinalizeRva, finalizeActual, finalizeExpected, sizeof(finalizeActual))))) return false;
+    g_finalizeShadowCamera = reinterpret_cast<CameraFinalizeFn>(GameBuild::At(g_gameModuleBase, CameraFinalizeRva));
     if (NativeHookChain::Create(reinterpret_cast<void*>(target), reinterpret_cast<void*>(&HookShadowBuilder),
             reinterpret_cast<void**>(&g_originalShadowBuilder)) != MH_OK) return false;
     if (MH_EnableHook(reinterpret_cast<void*>(target)) != MH_OK)

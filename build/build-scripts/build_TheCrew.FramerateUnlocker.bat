@@ -11,7 +11,6 @@ for %%I in ("%CD%\..\..") do set "ROOT=%%~fI"
 if "%ROOT:~-1%"=="\" set "ROOT=%ROOT%."
 set "OUTDIR=%ROOT%\build\FramerateUnlocker"
 set "OUTASI=%OUTDIR%\TheCrew.FramerateUnlocker.asi"
-set "DESTASI=C:\Games\The Crew\scripts\TheCrew.FramerateUnlocker.asi"
 set "CHECKDIR=%OUTDIR%\checks"
 set "STAGE=preflight"
 
@@ -21,6 +20,9 @@ echo =================================
 echo.
 
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0verify_TheCrew.FramerateUnlocker.ps1" -Phase Preflight -ProjectRoot "%ROOT%"
+if errorlevel 1 goto :fail
+set "STAGE=deployment-target-tests"
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%ROOT%\tests\DeploymentTargetsTests.ps1" -ProjectRoot "%ROOT%"
 if errorlevel 1 goto :fail
 set "STAGE=toolchain"
 
@@ -215,7 +217,7 @@ rem Installed DAT settings remain untouched.
 set "STAGE=deployment"
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0verify_TheCrew.FramerateUnlocker.ps1" -Phase Preflight -ProjectRoot "%ROOT%"
 if errorlevel 1 goto :fail
-copy /y "%OUTASI%" "%DESTASI%" >nul
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%~dp0verify_TheCrew.FramerateUnlocker.ps1" -Phase Deploy -ProjectRoot "%ROOT%"
 if errorlevel 1 goto :fail
 
 set "STAGE=advanced-graphics-build"

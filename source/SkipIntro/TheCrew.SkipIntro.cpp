@@ -12,6 +12,7 @@
 #include <intrin.h>
 #include "../shared/NativeGfx.h"
 #include "../shared/NativeMemory.h"
+#include "../shared/GameBuild.h"
 
 static std::atomic<bool> g_introDetaching{false};
 namespace IntegratedController
@@ -25,7 +26,7 @@ static bool ValidateMainModule(uintptr_t base)
         SafeRead(base + dos.e_lfanew, &nt) && nt.Signature == IMAGE_NT_SIGNATURE &&
         nt.FileHeader.Machine == IMAGE_FILE_MACHINE_AMD64 &&
         nt.OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC &&
-        nt.OptionalHeader.SizeOfImage == 0x535a000;
+        GameBuild::Select(nt.OptionalHeader.SizeOfImage, nt.FileHeader.TimeDateStamp);
 }
 }
 #include "IntroSkip.h"

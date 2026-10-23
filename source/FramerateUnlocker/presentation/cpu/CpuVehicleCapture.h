@@ -31,14 +31,14 @@ static void CaptureCpuPalette(uintptr_t packet,uint64_t model,CpuPresentationSna
         if (!(previous==owner)) previous={};
         return;
     }
-    const uintptr_t source=CpuDiscoveryResource(g_gameModuleBase+CpuPaletteRootRva,handle,true);
+    const uintptr_t source=CpuDiscoveryResource(GameBuild::At(g_gameModuleBase, CpuPaletteRootRva),handle,true);
     CpuPaletteSample sample; sample.handle=handle; sample.poseIdentity=model; sample.owner=owner;
     if (!source || !SafeCopyFrom(source,&sample.resource,sizeof(sample.resource)) ||
         !sample.resource.count || sample.resource.count>sample.resource.capacity ||
         !CpuDiscoverySpan(sample.resource.matrices,sample.resource.count,sizeof(CpuBoneMatrix))) return;
     // A deep native COW touch queues the palette observer even without a new
     // physics pose. Never write blended matrices into the game's palette.
-    const uintptr_t writable=g_cpuPaletteTouch(g_gameModuleBase+CpuPaletteRootRva,&handle,true);
+    const uintptr_t writable=g_cpuPaletteTouch(GameBuild::At(g_gameModuleBase, CpuPaletteRootRva),&handle,true);
     if (!writable || !SafeCopyFrom(writable,&sample.resource,sizeof(sample.resource)) ||
         !sample.resource.count || sample.resource.count>sample.resource.capacity ||
         !CpuDiscoverySpan(sample.resource.matrices,sample.resource.count,sizeof(CpuBoneMatrix))) return;
@@ -60,7 +60,7 @@ static bool CpuAppendMechanicalBindings(uintptr_t actor,uint64_t actorId,std::ve
     {
         uintptr_t component=0,table=0,parent=0,cached=0;
         if (!CpuDiscoveryPtr(components+size_t(c)*8,&component) || !CpuDiscoveryPtr(component,&table) ||
-            table!=g_gameModuleBase+0x206cf10) continue;
+            table!=GameBuild::At(g_gameModuleBase, 0x206cf10)) continue;
         if (!CpuDiscoveryPtr(component+0x18,&parent) || parent!=actor ||
             !CpuDiscoveryPtr(component+0x15ff8,&cached) || cached!=actor) continue;
         const auto appendRecord=[&](uintptr_t record)
@@ -69,10 +69,10 @@ static bool CpuAppendMechanicalBindings(uintptr_t actor,uint64_t actorId,std::ve
             if (!CpuDiscoveryRead(record,&owner)) return false;
             if (!owner) return true; // The animated alternative uses actor palettes.
             if (!CpuDiscoveryRead(owner+0x28,&entry.packet) || !CpuDiscoveryRead(owner+0x30,&entry.transform)) return false;
-            const uintptr_t packet=CpuDiscoveryResource(g_gameModuleBase+0x26da1c0,entry.packet,true);
+            const uintptr_t packet=CpuDiscoveryResource(GameBuild::At(g_gameModuleBase, 0x26da1c0),entry.packet,true);
             uint64_t transform=~0ull;
             if (!packet || !CpuDiscoveryRead(packet+0x18,&transform) || transform!=entry.transform ||
-                !CpuDiscoveryResource(g_gameModuleBase+0x26db030,entry.transform,true)) return true;
+                !CpuDiscoveryResource(GameBuild::At(g_gameModuleBase, 0x26db030),entry.transform,true)) return true;
             const size_t found=g_cpuBindingIndex->Find(bindings,entry.transform,false);
             if (found!=SIZE_MAX) return bindings[found].packet==entry.packet;
             // History includes the managed vehicle and native record/owner

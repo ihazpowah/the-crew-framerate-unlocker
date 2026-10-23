@@ -40,7 +40,7 @@ extern "C" void WINAPI CaptureNativeCameraPacket(uintptr_t packet, uintptr_t sou
 
     // Original COW packet identity/validation logic.
     if (!SafeRead(owner + 0x60, &resource) ||
-        !ReadNonNullPointer(g_gameModuleBase + NativeCameraResourceRootRva + 0x10, &table) ||
+        !ReadNonNullPointer(GameBuild::At(g_gameModuleBase, NativeCameraResourceRootRva) + 0x10, &table) ||
         !ReadNonNullPointer(table, &entries) ||
         !ReadNonNullPointer(entries + uintptr_t(uint32_t(resource)) * sizeof(uintptr_t), &currentPacket) ||
         currentPacket != packet)

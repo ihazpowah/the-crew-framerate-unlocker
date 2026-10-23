@@ -22,8 +22,8 @@ static void ResolveAppliedVsyncSource()
     const uint8_t expected[] = {0x48,0x8b,0x05,0x71,0xd0,0x18,0x03,0x89,0x50,0x68,0xc3};
     uint8_t actual[sizeof(expected)]{};
     g_appliedVsyncSettingsSlot = g_gameModuleBase &&
-        SafeCopyFrom(g_gameModuleBase + 0x3d2700, actual, sizeof(actual)) &&
-        memcmp(actual, expected, sizeof(expected)) == 0 ? g_gameModuleBase + 0x355f778 : 0;
+        SafeCopyFrom(GameBuild::At(g_gameModuleBase, 0x3d2700), actual, sizeof(actual)) &&
+        GameBuild::Matches(0x3d2700, actual, expected, sizeof(expected)) ? GameBuild::At(g_gameModuleBase, 0x355f778) : 0;
 }
 
 static void RefreshAppliedVsync()
@@ -37,10 +37,10 @@ static void RefreshAppliedVsync()
     {
         g_vsyncRefreshCeiling.store(0, std::memory_order_release);
     }
-    else if (!g_vsyncRefreshCeiling.load(std::memory_order_acquire))
+    else
     {
         const int fps=ReadDisplayRefreshCeiling();
-        if (fps) g_vsyncRefreshCeiling.store(fps,std::memory_order_release);
+        g_vsyncRefreshCeiling.store(fps,std::memory_order_release);
     }
 }
 

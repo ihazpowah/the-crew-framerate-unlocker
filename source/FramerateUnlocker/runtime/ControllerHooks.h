@@ -28,8 +28,7 @@ static bool ValidateMainModule(uintptr_t base)
             reinterpret_cast<const IMAGE_NT_HEADERS64*>(
                 base + dos->e_lfanew);
         return nt->Signature == IMAGE_NT_SIGNATURE &&
-               nt->OptionalHeader.SizeOfImage ==
-                   kExpectedImageSize;
+               GameBuild::Select(nt->OptionalHeader.SizeOfImage, nt->FileHeader.TimeDateStamp);
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -61,7 +60,7 @@ static bool InstallControllerHooks(
     const std::vector<uint8_t> renderCode =
         BuildRenderCallbackStub(
             g_renderStub, g_callbackData,
-            g_gameModuleBase + RenderCallbackRva,
+            GameBuild::At(g_gameModuleBase, RenderCallbackRva),
             reinterpret_cast<uintptr_t>(
                 &PublishRenderFrameState));
     const std::vector<uint8_t> cameraPacketCode =
@@ -70,7 +69,7 @@ static bool InstallControllerHooks(
     const std::vector<uint8_t> physicsCode =
         BuildPhysicsTickStub(
             g_physicsStub, g_callbackData,
-            g_gameModuleBase + PhysicsCallbackRva);
+            GameBuild::At(g_gameModuleBase, PhysicsCallbackRva));
     const auto cpuSourceCode = BuildCpuTransformSourceStub(g_allocation + CpuTransformSourceStubOffset, g_gameModuleBase);
     const auto cpuPaletteCode = BuildCpuPaletteSourceStub(g_allocation + CpuPaletteSourceStubOffset, g_gameModuleBase);
 
@@ -146,27 +145,27 @@ static bool InstallControllerHooks(
             g_physicsNode + 0x28,
             &currentPhysicsCallback) ||
         currentPhysicsCallback !=
-            g_gameModuleBase + PhysicsCallbackRva ||
+            GameBuild::At(g_gameModuleBase, PhysicsCallbackRva) ||
         !ReadNonNullPointer(
             g_renderNode + 0x28,
             &currentRenderCallback) ||
         currentRenderCallback !=
-            g_gameModuleBase + RenderCallbackRva)
+            GameBuild::At(g_gameModuleBase, RenderCallbackRva))
     {
         return false;
     }
 
-    const uintptr_t cameraPacketPatch = g_gameModuleBase + CameraPacketPatchRva;
+    const uintptr_t cameraPacketPatch = GameBuild::At(g_gameModuleBase, CameraPacketPatchRva);
     {
         static const uint8_t nativeSourceCopy[] = {
             0x0f, 0x28, 0x07, 0x48, 0x8b, 0xd8, 0x0f, 0x29, 0x40, 0x10
         }; // movaps xmm0,[rdi]; mov rbx,rax; movaps [rax+0x10],xmm0
         uint8_t contextCode[sizeof(nativeSourceCopy)] = {};
         uint8_t current[sizeof(originalCameraPacketCode)] = {};
-        if (!SafeCopyFrom(g_gameModuleBase + 0x3d0530, contextCode, sizeof(contextCode)) ||
-            memcmp(contextCode, nativeSourceCopy, sizeof(contextCode)) != 0 ||
+        if (!SafeCopyFrom(GameBuild::At(g_gameModuleBase, 0x3d0530), contextCode, sizeof(contextCode)) ||
+            !GameBuild::Matches(0x3d0530, contextCode, nativeSourceCopy, sizeof(contextCode)) ||
             !SafeCopyFrom(cameraPacketPatch, current, sizeof(current)) ||
-            memcmp(current, originalCameraPacketCode, sizeof(current)) != 0)
+            !GameBuild::Matches(CameraPacketPatchRva, current, originalCameraPacketCode, sizeof(current)))
             return false;
         void* nativePacket = nullptr;
         if (MH_CreateHook(reinterpret_cast<void*>(cameraPacketPatch),
@@ -184,13 +183,13 @@ static bool InstallControllerHooks(
     }
 
     const bool physicsInstalled = ReplaceCallback(g_physicsNode + 0x28,
-        g_gameModuleBase + PhysicsCallbackRva, g_physicsStub);
+        GameBuild::At(g_gameModuleBase, PhysicsCallbackRva), g_physicsStub);
     const bool renderInstalled = physicsInstalled && ReplaceCallback(g_renderNode + 0x28,
-        g_gameModuleBase + RenderCallbackRva, g_renderStub);
+        GameBuild::At(g_gameModuleBase, RenderCallbackRva), g_renderStub);
     if (!renderInstalled)
     {
         if (physicsInstalled)
-            ReplaceCallback(g_physicsNode + 0x28, g_physicsStub, g_gameModuleBase + PhysicsCallbackRva);
+            ReplaceCallback(g_physicsNode + 0x28, g_physicsStub, GameBuild::At(g_gameModuleBase, PhysicsCallbackRva));
         if (g_cameraPacketInstalled)
         {
             MH_DisableHook(reinterpret_cast<void*>(cameraPacketPatch));
@@ -217,7 +216,7 @@ static bool ResolveInitialState()
     }
 
     if (!ReadNonNullPointer(
-            g_gameModuleBase + kManagerRva, &g_manager))
+            GameBuild::At(g_gameModuleBase, kManagerRva), &g_manager))
         return false;
 
     uintptr_t subsystem = 0;

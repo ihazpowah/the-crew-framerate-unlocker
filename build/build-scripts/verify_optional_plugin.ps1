@@ -6,6 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ArtifactChecks.ps1')
+. (Join-Path $PSScriptRoot 'DeploymentTargets.ps1')
 try {
     if ($Phase -eq 'Dependency') {
         if (-not $MinHookRoot) { throw 'MinHookRoot is required for dependency verification.' }
@@ -17,30 +18,22 @@ try {
         $filename = 'TheCrew.SkipIntro.asi'
         $description = 'TheCrewFramerateUnlocker intro skip plugin for The Crew'
         $source = Join-Path $ProjectRoot "build\SkipIntro\$filename"
-        $destination = "C:\Games\The Crew\scripts\$filename"
     } elseif ($Plugin -eq 'AdvancedGraphics') {
         $filename = 'TheCrew.AdvancedGraphics.asi'
         $description = 'TheCrewFramerateUnlocker advanced graphics plugin for The Crew'
         $source = Join-Path $ProjectRoot "build\AdvancedGraphics\$filename"
-        $destination = "C:\Games\The Crew\scripts\$filename"
     } else {
         $filename = 'xinput1_3.dll'
         $description = 'TheCrewFramerateUnlocker XInput 1.3 proxy and ASI loader'
         $source = Join-Path $ProjectRoot "build\xinput1_3_wrapper\$filename"
-        $destination = "C:\Games\The Crew\$filename"
     }
-    if ($Phase -ne 'Built') {
-        if (Get-Process -Name TheCrew -ErrorAction SilentlyContinue) {
-            throw 'Fully close TheCrew.exe before building or deploying.'
-        }
-        if (-not (Test-Path -LiteralPath (Split-Path -Parent $destination) -PathType Container)) {
-            throw 'Deployment directory is missing.'
-        }
-    }
+    $roots = @(Get-TheCrewDeploymentRoots)
+    $destinations = @(Get-TheCrewArtifactDestinations $roots $filename)
+    if ($Phase -ne 'Built') { Assert-TheCrewDeploymentRoots $roots }
     if ($Phase -eq 'Preflight') { "$Plugin preflight: PASS"; exit 0 }
     $built = Assert-PluginArtifact $source $ProjectRoot $filename $description
     if ($Phase -eq 'Built') {
-        if ($Plugin -ne 'XInput') {
+        if ($Plugin -in @('SkipIntro', 'AdvancedGraphics')) {
             $obsoleteBuiltIni = Join-Path $ProjectRoot "build\$Plugin\TheCrew.$Plugin.ini"
             if (Test-Path -LiteralPath $obsoleteBuiltIni -PathType Leaf) {
                 Remove-Item -LiteralPath $obsoleteBuiltIni
@@ -50,21 +43,23 @@ try {
         "$Plugin artifact check: PASS"
         exit 0
     }
-    Copy-Item -LiteralPath $source -Destination $destination -Force
-    if ($Plugin -ne 'XInput') {
-        $obsoleteInstalledIni = "C:\Games\The Crew\scripts\TheCrew.$Plugin.ini"
-        if (Test-Path -LiteralPath $obsoleteInstalledIni -PathType Leaf) {
-            Remove-Item -LiteralPath $obsoleteInstalledIni
-            "$Plugin obsolete INI: removed"
+    foreach ($destination in $destinations) {
+        Copy-Item -LiteralPath $source -Destination $destination -Force
+        if ($Plugin -in @('SkipIntro', 'AdvancedGraphics')) {
+            $obsoleteInstalledIni = Join-Path (Split-Path -Parent $destination) "TheCrew.$Plugin.ini"
+            if (Test-Path -LiteralPath $obsoleteInstalledIni -PathType Leaf) {
+                Remove-Item -LiteralPath $obsoleteInstalledIni
+                "$Plugin obsolete INI: removed"
+            }
         }
+        $installed = Assert-PluginArtifact $destination $ProjectRoot $filename $description
+        if ($built.Length -ne $installed.Length -or
+            $built.LastWriteTimeUtc.Ticks -ne $installed.LastWriteTimeUtc.Ticks -or
+            (Get-ArtifactSha256 $source) -ne (Get-ArtifactSha256 $destination)) {
+            throw 'Built/deployed size, timestamp or SHA256 differs.'
+        }
+        "$Plugin deployment check: PASS - exact filename, size, timestamp and SHA256 match"
     }
-    $installed = Assert-PluginArtifact $destination $ProjectRoot $filename $description
-    if ($built.Length -ne $installed.Length -or
-        $built.LastWriteTimeUtc.Ticks -ne $installed.LastWriteTimeUtc.Ticks -or
-        (Get-ArtifactSha256 $source) -ne (Get-ArtifactSha256 $destination)) {
-        throw 'Built/deployed size, timestamp or SHA256 differs.'
-    }
-    "$Plugin deployment check: PASS - exact filename, size, timestamp and SHA256 match"
     exit 0
 } catch {
     [Console]::Error.WriteLine("PLUGIN CHECK FAILED: $($_.Exception.Message)")

@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('Preflight', 'Dependency', 'Built', 'Deployed')]
+    [ValidateSet('Preflight', 'Dependency', 'Built', 'Deploy', 'Deployed')]
     [string] $Phase,
     [Parameter(Mandatory = $true)]
     [string] $ProjectRoot,
@@ -9,7 +9,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'ArtifactChecks.ps1')
-$destination = 'C:\Games\The Crew\scripts\TheCrew.FramerateUnlocker.asi'
+. (Join-Path $PSScriptRoot 'DeploymentTargets.ps1')
+$roots = @(Get-TheCrewDeploymentRoots)
+$destinations = @(Get-TheCrewArtifactDestinations $roots 'TheCrew.FramerateUnlocker.asi')
 $output = Join-Path $ProjectRoot 'build\FramerateUnlocker\TheCrew.FramerateUnlocker.asi'
 
 function Assert-X64Asi([string] $Path) {
@@ -36,9 +38,7 @@ try {
                 throw "Required project directory is missing: $path"
             }
         }
-        if (-not (Test-Path -LiteralPath (Split-Path -Parent $destination) -PathType Container)) {
-            throw "Deployment directory is missing: $(Split-Path -Parent $destination)"
-        }
+        Assert-TheCrewDeploymentRoots $roots
         foreach ($source in @(
             'source\FramerateUnlocker\TheCrew.FramerateUnlocker.cpp',
             'tests\ShadowCameraTests.cpp', 'tests\ScreenSpaceFlareTests.cpp'
@@ -57,17 +57,21 @@ try {
         if (-not $MinHookRoot) { throw 'MinHookRoot is required for release provenance.' }
         Write-ReleaseManifest $output $ProjectRoot $MinHookRoot
     }
-    if ($Phase -eq 'Deployed') {
-        $installed = Assert-X64Asi $destination
-        if ($built.Length -ne $installed.Length) { throw 'Built/deployed ASI sizes differ.' }
-        if ($built.LastWriteTimeUtc.Ticks -ne $installed.LastWriteTimeUtc.Ticks) {
-            throw 'Built/deployed ASI timestamps differ.'
+    if ($Phase -in @('Deploy', 'Deployed')) {
+        Assert-TheCrewDeploymentRoots $roots
+        foreach ($destination in $destinations) {
+            if ($Phase -eq 'Deploy') { Copy-Item -LiteralPath $output -Destination $destination -Force }
+            $installed = Assert-X64Asi $destination
+            if ($built.Length -ne $installed.Length) { throw 'Built/deployed ASI sizes differ.' }
+            if ($built.LastWriteTimeUtc.Ticks -ne $installed.LastWriteTimeUtc.Ticks) {
+                throw 'Built/deployed ASI timestamps differ.'
+            }
+            $builtHash = Get-ArtifactSha256 $output
+            $installedHash = Get-ArtifactSha256 $destination
+            if ($builtHash -ne $installedHash) { throw 'Built/deployed ASI SHA256 hashes differ.' }
+            'Deployed ASI: {0} bytes; timestamp {1:O}' -f $installed.Length, $installed.LastWriteTime
+            "Deployment check: PASS - exact filename, size, timestamp and SHA256 match ($builtHash)"
         }
-        $builtHash = Get-ArtifactSha256 $output
-        $installedHash = Get-ArtifactSha256 $destination
-        if ($builtHash -ne $installedHash) { throw 'Built/deployed ASI SHA256 hashes differ.' }
-        'Deployed ASI: {0} bytes; timestamp {1:O}' -f $installed.Length, $installed.LastWriteTime
-        "Deployment check: PASS - exact filename, size, timestamp and SHA256 match ($builtHash)"
     }
     exit 0
 } catch {

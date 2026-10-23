@@ -32,17 +32,19 @@ for its owned numeric samples. No core operation reads native pointers.
 
 ## Runtime behavior
 
-The FPS menu offers native 30, native 60, unique Windows primary-display refresh
+The FPS menu offers native 30, native 60, unique game-window monitor refresh
 rates above 60 and below 1000 supported at the current Windows resolution in
 ascending order, then Unlimited, using the existing 1000 FPS cap. DXGI rational
 timings are rounded to the nearest whole FPS before deduplication, grouping
 119.88/120 and similar fractional variants without changing the display mode.
-DXGI supplies primary-output selection, current desktop mode and available modes;
+The game window's monitor selects the DXGI output, desktop mode and available modes;
 the current-mode result must match the output's desktop bounds. Rotated outputs
 use desktop-oriented dimensions for both the current mode and the mode list.
 Unlimited retains that software cap with VSync enabled and leaves
 presentation pacing to native VSync. Interpolation activation still uses the
-primary display refresh ceiling. Native 30/60 and the displayed selection are preserved.
+game monitor's refresh ceiling. Native 30/60 and the displayed selection are preserved.
+The VSync ceiling follows window moves. Menu rebuilds refresh monitor-specific
+choices while pending selections retain their original indices until Apply/discard.
 Apply saves the selection in
 TheCrew.FramerateUnlocker.dat beside the ASI. Legacy FPS-only DAT files remain
 readable. No INI is required.

@@ -17,17 +17,24 @@ The proxy belongs beside the game executable; ASIs belong in the installation's
 scripts directory. Each ASI is optional. A missing or failed plugin does not
 prevent the proxy from trying the others or forwarding XInput calls.
 
-The FPS menu offers **30**, **60**, supported Windows primary-display refresh
-rates above 60 Hz supported at the current Windows resolution in ascending
+The plugins support the Ubisoft/Uplay and Steam versions of The Crew. Supported
+executable identities are recorded in [tools/game-builds.json](tools/game-builds.json).
+Other executable builds require a separate compatibility review.
+
+The FPS menu offers **30**, **60**, refresh rates above 60 Hz supported by the game window's monitor
+at its current Windows resolution in ascending
 order, then **Unlimited**. Fractional timings are rounded to the nearest whole
 FPS and grouped (for example, 119.88/120 share one 120 option). Duplicate rates
 are shown once; rates at or above the existing 1000 FPS safety cap are omitted.
-Display selection, current resolution and mode timings are queried through DXGI.
+The game window selects the matching DXGI output, resolution and mode timings.
+The monitor containing most of the window is used, including while unfocused.
+Reopening/rebuilding the menu refreshes its choices; pending selections keep their
+original row indices until Apply or discard. The VSync ceiling follows monitor moves.
 Unlimited uses a 1000 FPS
 cap, including with VSync enabled, so native VSync controls presentation pacing.
 The displayed selection stays unchanged.
 Native 30/60 retain native presentation; effective limits above 60 enable the
-interpolation pipeline. With VSync enabled, activation uses the primary display
+interpolation pipeline. With VSync enabled, activation uses the game monitor's
 refresh ceiling independently of Unlimited's software cap.
 
 Apply saves the FPS selection in TheCrew.FramerateUnlocker.dat beside the ASI.
@@ -58,6 +65,12 @@ Close TheCrew.exe completely, then run from the project root:
 ~~~powershell
 cmd /c "build\build-scripts\build_TheCrew.FramerateUnlocker.bat"
 ~~~
+
+To update a second installation in the same canonical run, set
+`THECREW_ADDITIONAL_GAME_DIR` to its absolute game directory before running the
+command. Both destinations must contain `TheCrew.exe` and a `scripts` directory.
+The scripts deploy and verify the same four artifacts in both installations
+while preserving their DAT settings.
 
 The canonical script performs this workflow:
 

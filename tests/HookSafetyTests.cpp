@@ -13,7 +13,9 @@ static void StaleClockTestBeforeLock(unsigned path);
 
 using namespace IntegratedController;
 #include "native/plugins/FramerateMenuTests.h"
+#include "native/plugins/GameMonitorTests.h"
 #include "native/plugins/StartupFeatureTests.h"
+#include "GameBuildTests.h"
 #include "native/plugins/MenuSettingsTests.h"
 #include "native/hooks/NativeHookChainTests.h"
 #include "native/presentation/LightSourceInterpolationTests.h"
@@ -590,6 +592,8 @@ static void CheckNativeCameraReferenceCapture()
 
 int main()
 {
+    GameBuildTests::Check();
+    GameMonitorTests::Check();
     setvbuf(stdout, nullptr, _IONBF, 0);
     ReusablePoolTests::Check();
     CallbackPublicationTests::Check();

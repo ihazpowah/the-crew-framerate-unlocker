@@ -19,4 +19,5 @@ namespace IntegratedController
 #include "PlayerTagPresentation.h"
 
 #include "cpu/CpuHookInstallation.h"
+
 } // namespace IntegratedController

@@ -1,4 +1,5 @@
 #pragma once
+#include "GameBuild.h"
 
 // Process-local coordination for independent resident ASIs hooking the same
 // native entry points with private MinHook instances. Installation is serialized;
@@ -34,7 +35,7 @@ static BOOL CALLBACK Initialize(PINIT_ONCE, PVOID, PVOID*)
 #define TheCrewFramerateUnlocker_CHAIN_WRAPPER(result, name, rva, parameters, arguments) \
 static result __fastcall name parameters \
 { \
-    NativeHookChain::Frame frame = NativeHookChain::Enter(g_gameModuleBase + (rva), uintptr_t(_ReturnAddress())); \
+    NativeHookChain::Frame frame = NativeHookChain::Enter(GameBuild::At(g_gameModuleBase, (rva)), uintptr_t(_ReturnAddress())); \
     NativeHookChain::Publish(&frame); \
     __try { return name##Body arguments; } \
     __finally { NativeHookChain::Leave(&frame); } \
@@ -55,6 +56,8 @@ static Entry* Find(uintptr_t target)
 // Called while holding Transaction. Unregistered modifications remain rejected.
 static bool Matches(uintptr_t target, const uint8_t* expected, size_t size)
 {
+    const uintptr_t image = uintptr_t(GetModuleHandleW(nullptr));
+    expected = GameBuild::Signature(GameBuild::Canonical(target - image), expected, size);
     uint8_t actual[32]{};
     if (size > sizeof(actual) || !IntegratedController::SafeCopyFrom(target, actual, size)) return false;
     if (!memcmp(actual, expected, size)) return true;
@@ -97,7 +100,7 @@ static Frame Enter(uintptr_t target, uintptr_t caller)
     // Native recursion has a game-image caller and starts a fresh scope. A
     // peer's trampoline invocation comes from outside the executable image.
     const uintptr_t image = uintptr_t(GetModuleHandleW(nullptr));
-    if (caller < image || caller >= image + 0x535a000)
+    if (caller < image || caller >= image + GameBuild::ImageSize())
         for (Frame* p = frame.previous; p; p = p->previous)
             if (p->target == target) { frame.caller = p->caller; break; }
     return frame;

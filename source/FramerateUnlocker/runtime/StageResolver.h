@@ -21,7 +21,7 @@ static bool TryFindStageNode(
             return false;
 
         bool callbackOk =
-            callback == moduleBase + stage->callbackRva;
+            callback == GameBuild::At(moduleBase, stage->callbackRva);
         if (!callbackOk && hookedCallback &&
             callback == hookedCallback)
             callbackOk = true;
@@ -48,7 +48,7 @@ static bool TryResolveAll(
     *subsystem = 0;
 
     uintptr_t manager = 0;
-    if (!ReadNonNullPointer(moduleBase + kManagerRva, &manager))
+    if (!ReadNonNullPointer(GameBuild::At(moduleBase, kManagerRva), &manager))
         return false;
 
     Stage physics = {
@@ -66,7 +66,7 @@ static bool TryResolveAll(
     if (!ReadNonNullPointer(physics.node + 0x20, &timingObject) ||
         physics.node != timingObject + 0x268 ||
         !ReadNonNullPointer(timingObject + 0x268, &vtable) ||
-        vtable != moduleBase + PhysicsLayoutVtableRva ||
+        vtable != GameBuild::At(moduleBase, PhysicsLayoutVtableRva) ||
         !ReadNonNullPointer(timingObject + 0x58, &wrapper) ||
         !ReadNonNullPointer(wrapper + 0x140, subsystem))
         return false;
@@ -74,7 +74,7 @@ static bool TryResolveAll(
     uintptr_t physicsStep = timingObject + 0x260;
     uintptr_t stepVtable = 0;
     if (!ReadNonNullPointer(physicsStep + 8, &stepVtable) ||
-        stepVtable != moduleBase + PhysicsLayoutVtableRva)
+        stepVtable != GameBuild::At(moduleBase, PhysicsLayoutVtableRva))
         return false;
 
     return true;
